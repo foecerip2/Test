@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+node_modules
+__pycache__
+*.pyc
+.venv
+.DS_Store
+*.pem
+*.key
+id_*
+!*.pub.example

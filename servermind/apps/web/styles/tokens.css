@@ -1,0 +1,53 @@
+/* ServerMind Design System V2 — единственный источник цветов и радиусов.
+   Источник: SERVERMIND_CLAUDE_MASTER_PLAN_V2.md §16.1. Компоненты используют только эти токены.
+   `@theme static` — переменные эмитируются всегда и порождают утилиты (bg-surface, text-text-muted …). */
+@theme static {
+  --color-canvas: #080f1e;
+  --color-sidebar: #0b1426;
+  --color-surface: #101c31;
+  --color-elevated: #17243b;
+  --color-hover: #1d3049;
+  --color-stroke: #263854;
+  --color-primary: #20d4bf;
+  --color-primary-hover: #11bdaa;
+  --color-primary-muted: #0c343b;
+  --color-info: #60a5fa;
+  --color-ai: #a78bfa;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-text: #f3f7ff;
+  --color-text-secondary: #a9bbd2;
+  --color-text-muted: #8195ad;
+  --color-focus: #83e9de;
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-dialog: 18px;
+
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-h1: 1.875rem;
+  --text-h2: 1.375rem;
+  --text-h3: 1.0625rem;
+  --text-kpi: 1.625rem;
+  --text-label: 0.75rem;
+}
+
+:root {
+  /* Производные тона статусов (смешение токенов, не новые цвета) */
+  --tint-primary: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  --tint-info: color-mix(in srgb, var(--color-info) 14%, transparent);
+  --tint-ai: color-mix(in srgb, var(--color-ai) 14%, transparent);
+  --tint-success: color-mix(in srgb, var(--color-success) 14%, transparent);
+  --tint-warning: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  --tint-danger: color-mix(in srgb, var(--color-danger) 14%, transparent);
+
+  --shadow-card: 0 1px 0 0 color-mix(in srgb, white 3%, transparent) inset, 0 8px 24px -12px rgb(0 0 0 / 0.5);
+  --shadow-overlay: 0 24px 64px -16px rgb(0 0 0 / 0.7);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --shell-sidebar: 240px;
+  --shell-topbar: 64px;
+}
