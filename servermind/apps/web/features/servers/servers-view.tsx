@@ -85,7 +85,7 @@ export function ServersView() {
             <EmptyState title="Ничего не найдено" description="Измените запрос или фильтр." />
           ) : (
             <ul className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3" aria-label="Список серверов">
-              {list.map((s) => <li key={s.id}><ServerCard server={s} spark /></li>)}
+              {list.map((s) => <li key={s.id} className="min-w-0"><ServerCard server={s} spark /></li>)}
             </ul>
           )}
         </FadeIn>

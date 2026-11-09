@@ -26,7 +26,7 @@ function StatCard({ icon, label, value, sub, tone }: { icon: ReactNode; label: s
         <span className={`grid size-10 place-items-center rounded-control [&_svg]:size-5 ${tone === "warning" ? "bg-[var(--tint-warning)] text-warning" : "bg-primary-muted text-primary"}`} aria-hidden>{icon}</span>
         <div className="min-w-0">
           <p className="label text-text-secondary">{label}</p>
-          <p className="kpi">{value}</p>
+          <div className="kpi">{value}</div>
         </div>
       </div>
       <p className="mt-3 truncate text-xs text-text-muted">{sub}</p>
@@ -109,7 +109,7 @@ export function DashboardView() {
       <div className="mb-6 grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard icon={<Server />} label="Серверы" value={val(servers.state, (d) => d.length)} sub={servers.state.status === "ready" ? "подключено" : "нет данных"} />
         <StatCard icon={<CircleCheck />} label="Онлайн" value={val(servers.state, () => online)} sub={servers.state.status === "ready" ? `из ${list.length}` : "нет данных"} />
-        <StatCard icon={<Boxes />} label="Ждут подтверждения" tone={waiting.length ? "warning" : undefined} value={val(ops.state, () => waiting.length)} sub={ops.state.status === "ready" ? `всего операций: ${ops.state.data.length}` : "нет данных"} />
+        <StatCard icon={<Boxes />} label="На подтверждении" tone={waiting.length ? "warning" : undefined} value={val(ops.state, () => waiting.length)} sub={ops.state.status === "ready" ? `всего операций: ${ops.state.data.length}` : "нет данных"} />
         <StatCard icon={<Zap />} label="AI-кредиты" value={val(bal.state, (d) => formatNumber(d.available))} sub={bal.state.status === "ready" ? "по ledger" : "нет данных"} />
       </div>
 
@@ -139,7 +139,7 @@ export function DashboardView() {
             {servers.state.status === "ready" && list.length === 0 && (
               <EmptyState icon={<Server aria-hidden />} title="Серверов пока нет" description="Подключите Ubuntu VPS по SSH-ключу." action={<Link href="/onboarding" className={buttonVariants()}>Начать подключение</Link>} />
             )}
-            {list.length > 0 && <ul className="grid gap-5 md:grid-cols-2">{list.slice(0, 4).map((s) => <li key={s.id}><ServerCard server={s} spark /></li>)}</ul>}
+            {list.length > 0 && <ul className="grid gap-5 md:grid-cols-2">{list.slice(0, 4).map((s) => <li key={s.id} className="min-w-0"><ServerCard server={s} spark /></li>)}</ul>}
           </section>
           {list.length > 0 && <ResourceUsage servers={list} />}
         </div>

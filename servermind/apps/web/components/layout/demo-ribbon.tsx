@@ -8,7 +8,7 @@ export function DemoRibbon() {
       className="sticky top-0 z-[60] flex h-7 items-center justify-center gap-2 bg-warning px-3 text-[12px] font-semibold leading-none text-canvas"
     >
       <FlaskConical aria-hidden className="size-3.5 shrink-0" />
-      <span className="truncate">Демо-данные · dev-фикстуры · на серверах ничего не выполняется</span>
+      <span className="truncate">Демо-данные<span className="hidden sm:inline"> · dev-фикстуры · на серверах ничего не выполняется</span><span className="sm:hidden"> · ничего не выполняется</span></span>
     </div>
   );
 }

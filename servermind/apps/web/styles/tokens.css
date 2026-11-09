@@ -20,6 +20,8 @@
   --color-text-secondary: #a9bbd2;
   --color-text-muted: #8195ad;
   --color-focus: #83e9de;
+  /* Текст на тонированном danger-фоне: светлее базового red для контраста AA */
+  --color-danger-fg: #fca5a5;
 
   --radius-control: 10px;
   --radius-card: 14px;

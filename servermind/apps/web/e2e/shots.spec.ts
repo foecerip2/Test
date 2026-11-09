@@ -61,7 +61,7 @@ test.describe("скриншоты", () => {
     await shot(page, "approval-modal-mobile-390");
     await page.getByRole("dialog").getByRole("checkbox").click();
     await page.getByRole("button", { name: "Подтвердить и выполнить" }).click();
-    await page.getByText("Выполняется").first().waitFor();
+    await page.getByText("Выполняется", { exact: true }).first().waitFor();
     await page.waitForTimeout(3200);
     await shot(page, "deploy-running-mobile-390");
     await page.setViewportSize(D);

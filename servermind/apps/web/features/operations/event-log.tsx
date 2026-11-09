@@ -12,7 +12,7 @@ const time = (iso: string) => {
 export function EventLog({ events, className }: { events: JobEvent[]; className?: string }) {
   if (events.length === 0) return <p className="text-sm text-text-muted">Событий пока нет.</p>;
   return (
-    <ol role="log" aria-label="Журнал выполнения" className={cn("space-y-1 rounded-control border border-stroke bg-canvas p-3 font-mono text-xs leading-5", className)}>
+    <div role="log" aria-label="Журнал выполнения" className={cn("rounded-control border border-stroke bg-canvas p-3 font-mono text-xs leading-5", className)}><ol className="space-y-1">
       {events.map((e) => {
         const Icon = e.level === "error" ? CircleAlert : e.level === "warn" ? TriangleAlert : /успеш/.test(e.message) ? CircleCheck : Info;
         const color = e.level === "error" ? "text-danger" : e.level === "warn" ? "text-warning" : "text-text-secondary";
@@ -25,6 +25,6 @@ export function EventLog({ events, className }: { events: JobEvent[]; className?
           </li>
         );
       })}
-    </ol>
+    </ol></div>
   );
 }

@@ -9,20 +9,18 @@ export function UsageMeter({
   const text = level === "crit" ? "критично" : level === "warn" ? "высокая" : level === "ok" ? "норма" : "нет данных";
   return (
     <div className={cn("space-y-1.5", className)}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="label text-text-secondary">{label}</span>
-        <span className="tabular text-sm font-medium">
+      <div className="flex flex-col gap-0.5">
+        <span className="label whitespace-nowrap text-text-secondary">{label}</span>
+        <span className="tabular whitespace-nowrap text-sm font-medium">
           {value == null ? "—" : `${Math.round(value)}%`}
           <span className="ml-1.5 text-xs font-normal text-text-muted">{text}</span>
         </span>
       </div>
       <div
-        role="meter"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={value ?? undefined}
-        aria-valuetext={value == null ? "нет данных" : `${Math.round(value)}% — ${text}`}
+        role={value == null ? "img" : "meter"}
+        aria-label={value == null ? `${label}: нет данных` : label}
+        {...(value == null ? {} : { "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": value })}
+        aria-valuetext={value == null ? undefined : `${Math.round(value)}% — ${text}`}
         className="h-1.5 overflow-hidden rounded-full bg-elevated"
       >
         <div

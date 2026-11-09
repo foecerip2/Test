@@ -120,7 +120,7 @@ test("подтверждение: изменение плана сбрасыва
   await expect(go).toBeEnabled();
   await go.click();
   await expect(page).toHaveURL(/\/operations\/op_plan_demo_docker$/);
-  await expect(page.getByText("Выполняется").first()).toBeVisible();
+  await expect(page.getByText("Выполняется", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Выполнено", { exact: true }).first()).toBeVisible({ timeout: 25_000 });
   const log = await page.getByRole("log").innerText();
   expect(log).toContain("[демо]");

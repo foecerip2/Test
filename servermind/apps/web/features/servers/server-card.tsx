@@ -29,7 +29,7 @@ export function ServerCard({ server, spark }: { server: ServerSummary; spark?: b
   return (
     <Link
       href={`/servers/${server.id}`}
-      className="group block rounded-card border border-stroke bg-surface p-5 shadow-[var(--shadow-card)] transition-colors duration-120 hover:border-text-muted/50 hover:bg-elevated"
+      className="group block min-w-0 rounded-card border border-stroke bg-surface p-5 shadow-[var(--shadow-card)] transition-colors duration-120 hover:border-text-muted/50 hover:bg-elevated"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -46,7 +46,7 @@ export function ServerCard({ server, spark }: { server: ServerSummary; spark?: b
         </div>
       </div>
 
-      <div className={`mt-4 grid grid-cols-3 gap-4 ${offline ? "opacity-60" : ""}`}>
+      <div className={`mt-4 grid grid-cols-1 gap-4 min-[480px]:grid-cols-3`}>
         <UsageMeter label="CPU" value={server.cpuPercent} />
         <UsageMeter label="RAM" value={pct(server.ramUsedMb, server.ramTotalMb)} detail={server.ramUsedMb != null ? `${mbToGb(server.ramUsedMb)} / ${mbToGb(server.ramTotalMb)}` : undefined} />
         <UsageMeter label="Диск" value={pct(server.diskUsedGb, server.diskTotalGb)} detail={server.diskUsedGb != null ? `${gb(server.diskUsedGb)} / ${gb(server.diskTotalGb)}` : undefined} />

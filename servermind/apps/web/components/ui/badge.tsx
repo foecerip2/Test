@@ -11,7 +11,7 @@ export const badgeVariants = cva(
         primary: "border-primary/30 bg-[var(--tint-primary)] text-primary",
         success: "border-success/30 bg-[var(--tint-success)] text-success",
         warning: "border-warning/30 bg-[var(--tint-warning)] text-warning",
-        danger: "border-danger/30 bg-[var(--tint-danger)] text-danger",
+        danger: "border-danger/30 bg-[var(--tint-danger)] text-danger-fg",
         info: "border-info/30 bg-[var(--tint-info)] text-info",
         ai: "border-ai/30 bg-[var(--tint-ai)] text-ai",
       },
