@@ -1,8 +1,0 @@
-{
-  "app": {
-    "[project]/app/(app)/dashboard/page": []
-  },
-  "appUsingSizeAdjust": false,
-  "pages": {},
-  "pagesUsingSizeAdjust": false
-}
