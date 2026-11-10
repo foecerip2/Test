@@ -20,9 +20,10 @@
 .btn-danger:hover:not(:disabled) { background: #fbe3e0; }
 .btn-quiet { border-color: transparent; background: transparent; }
 .btn-sm { min-height: 34px; padding: 0 12px; font-size: 0.75rem; }
-@media (max-width: 700px) { .btn-sm { min-height: var(--hit); } .link-btn { min-height: var(--hit); } }
+@media (max-width: 700px) { .btn-sm { min-height: var(--hit); } }
 .link-btn { border: 0; background: none; color: var(--accent); font-size: 0.8125rem; font-weight: 700; min-height: 32px; padding: 0 4px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
 .link-btn:hover { text-decoration: underline; }
+@media (max-width: 700px) { .link-btn { min-height: var(--hit); } }
 .ico { width: 17px; height: 17px; display: inline-flex; flex-shrink: 0; }
 .ico svg { width: 100%; height: 100%; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linejoin: round; stroke-linecap: round; }
 
@@ -130,7 +131,7 @@
 .state { padding: 48px 20px; text-align: center; color: var(--muted); }
 .state-icon { width: 52px; height: 52px; border-radius: 50%; background: #eff4f0; color: #2f6f52; display: grid; place-items: center; margin: 0 auto 14px; }
 .state.error .state-icon { background: var(--red-tint); color: var(--red); }
-.state h3 { font-size: 1rem; color: var(--ink); margin-bottom: 8px; }
+.state h1, .state h2, .state h3 { font-size: 1rem; color: var(--ink); margin-bottom: 8px; }
 .state p { font-size: 0.8125rem; line-height: 1.65; max-width: 380px; margin: 0 auto 16px; }
 .skeleton { background: linear-gradient(90deg, #edf1ed 25%, #f6f8f5 37%, #edf1ed 63%); background-size: 400% 100%; animation: shimmer 1.3s ease infinite; border-radius: 6px; }
 @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
@@ -163,7 +164,7 @@
 .steps span { flex: 1; height: 4px; border-radius: 10px; background: #e1e8e3; }
 .steps .done { background: #277a60; }
 .callout { background: var(--deep); color: #fff; border-radius: var(--radius); padding: 22px; display: flex; justify-content: space-between; gap: 15px; align-items: center; margin-top: 18px; }
-.callout h3 { font-size: 1rem; margin-bottom: 6px; }
+.callout h2, .callout h3 { font-size: 1rem; margin-bottom: 6px; }
 .callout p { font-size: 0.8125rem; line-height: 1.6; color: #c4dacf; max-width: 520px; }
 .callout .btn { background: #f5f8f0; color: #1f4a37; border-color: transparent; }
 .callout :focus-visible { outline-color: #a8dcc6; }

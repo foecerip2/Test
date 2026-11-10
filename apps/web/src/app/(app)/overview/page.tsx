@@ -51,7 +51,7 @@ export default function OverviewPage() {
       {s.awaitingApproval > 0 && (
         <div className="callout">
           <div>
-            <h2 style={{ fontSize: "1rem", marginBottom: 6 }}>{s.awaitingApproval} {s.awaitingApproval === 1 ? "черновик ждёт" : "черновиков ждут"} вашего решения</h2>
+            <h2>{s.awaitingApproval} {s.awaitingApproval === 1 ? "черновик ждёт" : "черновиков ждут"} вашего решения</h2>
             <p>Проверьте текст предложения и статус согласия адресата. Одобрение текста не даёт права отправки.</p>
           </div>
           <Link href="/approvals" className="btn">Перейти к согласованию <Icon name="arrow" /></Link>
