@@ -46,6 +46,7 @@
 - ✅ Проверено: тесты bootstrap **103 passed** (52 обновлятор + 51 установщик, на поддельном docker), мутационная проверка update.sh **12 из 12**, `shellcheck`/`actionlint`/`yamllint` чисто, `systemd-analyze verify`, `docker compose config`, веб запускается в layout runtime-образа, `api.env` принимается реальным конфигом API
 - ⬜ **Не выполнялось ни разу:** сборка образов, `docker compose up`, HTTPS/ACME, pull из GHCR, systemd-таймер на живой системе, установка Docker через apt. Первая реальная проверка Dockerfile — job `images` в CI; затем — установка на тестовый VPS
 - 🟡 Ограничения: версии GitHub Actions заданы мажорными тегами (не SHA, не сверены); образы postgres/caddy — плавающие теги; `cap_drop` у postgres не задан; бэкапы только локально; уведомления о сбое обновления только в журнале и `last-update.json`; `client_ip` за Caddy/Next — адрес контейнера (лимит входа по IP ненадёжен, по email работает)
+- ✅ Облегчённый режим `--low-memory` (+ опциональный `--swap-size`) для VPS ≈2 ГБ: лимиты через `SM_MEM_*` в `compose/.env`; проверено на поддельном docker (лимиты записываются, swap только по флагу, dry-run ничего не меняет). **Реальная работа на 2 ГБ не измерялась**
 - ⬜ Worker, очередь заданий, исполнение `docker.install` / `app.deploy_compose` на целевых серверах — отдельное разрешение владельца и security review
 
 ## Фаза 5

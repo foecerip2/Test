@@ -24,6 +24,8 @@ less install.sh
 sudo bash install.sh --image-repo ghcr.io/<owner>/servermind --dry-run      # план, ничего не меняет
 sudo bash install.sh --image-repo ghcr.io/<owner>/servermind --domain app.example.com --create-owner you@example.com
 ```
+- `--low-memory` — **облегчённый режим для VPS с ≈2 ГБ RAM (тест)**: лимиты контейнеров PostgreSQL 320m / API 256m / web 224m / Caddy 48m, `shared_buffers=64MB`, `max_connections=30`, `--max-old-space-size=160` для Node. Порог RAM снижается до ≈1,7 ГБ. **Работа на 2 ГБ не измерялась**: запас мал, возможны OOM-перезапуски контейнеров (смотрите `docker compose … ps`, `dmesg | grep -i oom`). Для продакшена — 4 ГБ и обычный режим. После увеличения RAM: удалите строки `SM_*` из `/opt/servermind/compose/.env` и выполните `docker compose -p servermind --project-directory /opt/servermind/compose up -d`.
+- `--swap-size 2048` — создать swap-файл `/swapfile` (только по этому флагу; если swap уже есть или файл существует — не трогается; запись в `/etc/fstab`). Swap замедляет работу при нехватке RAM, но защищает от OOM.
 - `--domain` — автоматический HTTPS (нужна A-запись и свободные порты 80/443). Без домена — HTTP на `:80` **только для теста** (cookie без Secure).
 - Занят порт 80/443 чужой службой (nginx/caddy) → установщик **откажет и ничего не остановит**: освободите порт сами либо используйте другой порт/сервер.
 - Пароль владельца вводится интерактивно; пароль root серверу не нужен нигде.

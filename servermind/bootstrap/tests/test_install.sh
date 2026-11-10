@@ -144,6 +144,34 @@ echo "== 7. приватные образы: токен только из фай
 setup; printf 'ghp_FAKETOKENFORTEST\n' > "$T/tok"; chmod 600 "$T/tok"; inst "${REPO[@]}" --yes --ghcr-user someone --ghcr-token-file "$T/tok"
 check "docker login с --password-stdin; токена нет в аргументах и логах" 'log_has "login ghcr.io -u someone --password-stdin" && ! log_has "ghp_FAKETOKEN" && ! grep -q ghp_FAKETOKEN "$T/out.log"'
 
+echo "== 8. облегчённый режим (--low-memory) и swap"
+setup; printf 'MemTotal:        2015000 kB\n' > "$MEMINFO"
+inst "${REPO[@]}" --dry-run; check "2 ГБ без --low-memory → отказ с подсказкой про --low-memory" '[[ "$RC" != 0 ]] && grep -q "low-memory" "$T/out.log"'
+inst "${REPO[@]}" --dry-run --low-memory; check "2 ГБ с --low-memory → план показан, режим назван" '[[ "$RC" == 0 ]] && grep -q "ОБЛЕГЧЁННЫЙ" "$T/out.log" && grep -q "Swap:             не изменяется" "$T/out.log"'
+setup; printf 'MemTotal:        1000000 kB\n' > "$MEMINFO"; inst "${REPO[@]}" --dry-run --low-memory
+check "1 ГБ отказ даже в облегчённом режиме" '[[ "$RC" != 0 ]] && grep -q "даже для облегчённого" "$T/out.log"'
+setup; inst "${REPO[@]}" --dry-run --swap-size abc; check "--swap-size: не число → ошибка" '[[ "$RC" != 0 ]]'
+inst "${REPO[@]}" --dry-run --swap-size 64; check "--swap-size: слишком мало → ошибка" '[[ "$RC" != 0 ]]'
+
+# установка в облегчённом режиме: лимиты в compose/.env, swap создаётся ТОЛЬКО по флагу (команды подменены через PATH)
+mkstubs() { mkdir -p "$T/bin"; for c in dd mkswap swapon; do printf '#!/usr/bin/env bash\necho "%s $*" >> "%s"\n' "$c" "$T/swap.log" > "$T/bin/$c"; chmod +x "$T/bin/$c"; done
+  # поддельный dd, как настоящий, создаёт выходной файл (без записи гигабайтов)
+  printf '#!/usr/bin/env bash\necho "dd $*" >> "%s"\nfor a in "$@"; do [[ "$a" == of=* ]] && : > "${a#of=}"; done\nexit 0\n' "$T/swap.log" > "$T/bin/dd"; chmod +x "$T/bin/dd"; }
+setup; printf 'MemTotal:        2015000 kB\n' > "$MEMINFO"; mkstubs; : > "$T/swaps"; : > "$T/fstab"
+PATH="$T/bin:$PATH" SWAPS="$T/swaps" FSTAB="$T/fstab" SWAPFILE="$T/swapfile" inst "${REPO[@]}" --yes --low-memory
+check "low-memory: установка успешна, лимиты записаны в compose/.env" '[[ "$RC" == 0 ]] && [[ "$(val "$SM_ROOT/compose/.env" SM_MEM_POSTGRES)" == 320m ]] && [[ "$(val "$SM_ROOT/compose/.env" SM_PG_MAX_CONNECTIONS)" == 30 ]] && [[ "$(val "$SM_ROOT/compose/.env" SM_WEB_NODE_OPTIONS)" == --max-old-space-size=160 ]]'
+check "без --swap-size swap не создаётся и fstab не тронут" '[[ ! -e "$T/swap.log" && ! -s "$T/fstab" ]]'
+setup; mkstubs; : > "$T/swaps"; : > "$T/fstab"
+PATH="$T/bin:$PATH" SWAPS="$T/swaps" FSTAB="$T/fstab" SWAPFILE="$T/swapfile" inst "${REPO[@]}" --yes --swap-size 2048
+check "обычный режим: лимиты не записываются" '[[ "$RC" == 0 ]] && [[ -z "$(val "$SM_ROOT/compose/.env" SM_MEM_POSTGRES)" ]]'
+check "--swap-size: dd/mkswap/swapon вызваны, fstab дополнен" 'grep -q "count=2048" "$T/swap.log" && grep -q "^mkswap" "$T/swap.log" && grep -q "^swapon" "$T/swap.log" && grep -q "$T/swapfile none swap" "$T/fstab"'
+setup; mkstubs; printf 'Filename Type Size Used Priority\n/dev/x partition 1000 0 -2\n' > "$T/swaps"; : > "$T/fstab"
+PATH="$T/bin:$PATH" SWAPS="$T/swaps" FSTAB="$T/fstab" SWAPFILE="$T/swapfile" inst "${REPO[@]}" --yes --swap-size 2048
+check "swap уже подключён → второй не создаётся" '[[ "$RC" == 0 ]] && [[ ! -e "$T/swap.log" ]] && grep -q "swap уже подключён" "$T/out.log"'
+setup; mkstubs; : > "$T/swaps"; : > "$T/fstab"
+PATH="$T/bin:$PATH" SWAPS="$T/swaps" FSTAB="$T/fstab" SWAPFILE="$T/swapfile" inst "${REPO[@]}" --dry-run --swap-size 2048
+check "dry-run со swap: ничего не создано, fstab пуст, план упоминает файл" '[[ "$RC" == 0 ]] && [[ ! -e "$T/swap.log" && ! -s "$T/fstab" ]] && grep -q "будет создан файл" "$T/out.log"'
+
 echo
 echo "install.sh: пройдено $PASS, провалено $FAILN"
 [[ "$FAILN" == 0 ]]

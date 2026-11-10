@@ -24,6 +24,9 @@ MIN_DISK_MB="${MIN_DISK_MB:-8192}"       # целевой резерв своб�
 IMAGE_REPO=""; CHANNEL="stable"; DOMAIN=""; HTTP_PORT=80; HTTPS_PORT=443
 GHCR_USER=""; GHCR_TOKEN_FILE=""; OWNER_EMAIL=""
 ASSUME_YES=0; DRY_RUN=0; FORCE=0
+LOW_MEMORY=0; SWAP_MB=0
+MIN_RAM_KB_LOW="${MIN_RAM_KB_LOW:-1700000}"   # «2 ГБ» VPS показывает ≈1.9 ГБ
+SWAPFILE="${SWAPFILE:-/swapfile}"; SWAPS="${SWAPS:-/proc/swaps}"; FSTAB="${FSTAB:-/etc/fstab}"
 
 log()  { printf '\033[1m[install]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[install] ВНИМАНИЕ:\033[0m %s\n' "$*" >&2; }
@@ -47,6 +50,10 @@ usage() {
   --create-owner EMAIL     создать владельца (пароль вводится интерактивно)
   --dry-run                только показать план, ничего не менять
   --yes                    не спрашивать подтверждение
+  --low-memory             облегчённый режим для VPS с ≈2 ГБ RAM: меньшие лимиты контейнеров и настройки PostgreSQL.
+                           Для теста; запас по памяти мал, на 4 ГБ используйте обычный режим
+  --swap-size N            создать swap-файл N МБ (только вместе с явным флагом; по умолчанию swap не трогается;
+                           рекомендуется 2048 вместе с --low-memory). Это изменение системы: оно показывается в плане
   --force                  игнорировать проверки ОС/памяти/диска (на свой риск)
 EOF
 }
@@ -64,6 +71,8 @@ parse_args() {
       --create-owner) OWNER_EMAIL="${2:?}"; shift 2 ;;
       --dry-run) DRY_RUN=1; shift ;;
       --yes) ASSUME_YES=1; shift ;;
+      --low-memory) LOW_MEMORY=1; shift ;;
+      --swap-size) SWAP_MB="${2:?}"; shift 2 ;;
       --force) FORCE=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "неизвестный параметр: $1 (см. --help)" ;;
@@ -73,6 +82,8 @@ parse_args() {
   [[ "$IMAGE_REPO" =~ ^[a-z0-9._/-]+$ ]] || die "--image-repo: допустимы строчные латинские буквы, цифры, . _ / -"
   [[ "$CHANNEL" =~ ^[A-Za-z0-9._-]+$ ]] || die "--channel: недопустимое имя тега"
   [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTPS_PORT" =~ ^[0-9]+$ ]] || die "порты должны быть числами"
+  [[ "$SWAP_MB" =~ ^[0-9]+$ ]] || die "--swap-size: число мегабайт"
+  (( SWAP_MB == 0 || (SWAP_MB >= 256 && SWAP_MB <= 16384) )) || die "--swap-size: от 256 до 16384 МБ"
   if [[ -n "$DOMAIN" ]]; then
     [[ "$DOMAIN" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || die "--domain: некорректное доменное имя"
     [[ "$HTTP_PORT" == 80 && "$HTTPS_PORT" == 443 ]] || die "автоматический HTTPS (Let's Encrypt) работает только на портах 80/443; уберите --http-port/--https-port или --domain"
@@ -103,12 +114,23 @@ preflight_resources() {
   while [[ ! -d "$dir" && "$dir" != / ]]; do dir="$(dirname "$dir")"; done
   free_mb="$(df -Pm "$dir" | awk 'NR==2 {print $4}')"
   log "ресурсы: RAM $((ram_kb / 1024)) МБ, свободно на диске $free_mb МБ"
-  if (( ram_kb < MIN_RAM_KB )); then
-    if (( FORCE )); then warn "мало RAM (--force)"; else die "мало памяти: нужно ≈4 ГБ (найдено $((ram_kb / 1024)) МБ). Обойти: --force"; fi
+  local need_kb="$MIN_RAM_KB" need_txt="≈4 ГБ"
+  if (( LOW_MEMORY )); then need_kb="$MIN_RAM_KB_LOW"; need_txt="≈2 ГБ (облегчённый режим)"; fi
+  if (( ram_kb < need_kb )); then
+    if (( FORCE )); then warn "мало RAM (--force)"
+    elif (( LOW_MEMORY )); then die "мало памяти даже для облегчённого режима: нужно $need_txt (найдено $((ram_kb / 1024)) МБ). Обойти: --force"
+    else die "мало памяти: нужно ≈4 ГБ (найдено $((ram_kb / 1024)) МБ). Для теста на ≈2 ГБ добавьте --low-memory (подробности: --help). Обойти: --force"; fi
   fi
   if (( free_mb < MIN_DISK_MB )); then
     if (( FORCE )); then warn "мало места (--force)"; else die "мало места: нужно ≥ ${MIN_DISK_MB} МБ свободно (найдено $free_mb МБ). Обойти: --force"; fi
   fi
+}
+
+# DNS-проверка домена: только предупреждение (не блокирует; Let's Encrypt всё равно потребует A-запись)
+check_domain() {
+  [[ -n "$DOMAIN" ]] || return 0
+  getent hosts "$DOMAIN" >/dev/null 2>&1 || warn "домен $DOMAIN пока не резолвится: создайте A-запись на IP этого сервера, иначе HTTPS-сертификат не будет выдан"
+  return 0
 }
 
 port_busy() { "$SS" -ltnH "( sport = :$1 )" 2>/dev/null | grep -q .; }
@@ -136,6 +158,8 @@ print_plan() {
 Каталог:          $SM_ROOT  (env/ — секреты 600, compose/, state/, backups/)
 Доступ:           $mode
 Docker:           $(command -v "$DOCKER" >/dev/null 2>&1 && echo "уже установлен — используется как есть" || echo "будет установлен из официального репозитория Docker (apt)")
+Режим памяти:     $( (( LOW_MEMORY )) && echo "ОБЛЕГЧЁННЫЙ (лимиты: PostgreSQL 320m, API 256m, web 224m, Caddy 48m; запас мал, замеров на 2 ГБ нет)" || echo "обычный (рассчитан на 4 ГБ)")
+Swap:             $( if (( SWAP_MB > 0 )); then echo "будет создан файл $SWAPFILE ${SWAP_MB} МБ (если swap ещё не подключён) и добавлен в $FSTAB"; else echo "не изменяется"; fi)
 Автообновление:   systemd timer servermind-update.timer (раз в минуту; бэкап БД → миграции → smoke → откат при сбое)
 
 Будет изменено:   $SM_ROOT, ${SYSTEMD_DIR}/servermind-update.{service,timer}$(command -v "$DOCKER" >/dev/null 2>&1 || echo ", apt-репозиторий и пакеты Docker")
@@ -218,6 +242,19 @@ generate_env() {
   chmod 700 "$envdir"; chmod 600 "$envdir/postgres.env" "$envdir/api.env"
 }
 
+# Создаёт swap-файл только по явному --swap-size и только если swap ещё не подключён и файла нет.
+setup_swap() {
+  (( SWAP_MB > 0 )) || return 0
+  if [[ -e "$SWAPFILE" ]]; then warn "$SWAPFILE уже существует — swap не создаю"; return 0; fi
+  if [[ "$(awk 'NR>1' "$SWAPS" 2>/dev/null | wc -l)" != 0 ]]; then warn "swap уже подключён — не создаю второй"; return 0; fi
+  log "создаю swap-файл $SWAPFILE (${SWAP_MB} МБ)"
+  run dd if=/dev/zero of="$SWAPFILE" bs=1M count="$SWAP_MB" status=none
+  run chmod 600 "$SWAPFILE"
+  run mkswap "$SWAPFILE"
+  run swapon "$SWAPFILE"
+  if (( DRY_RUN )); then echo "[dry-run] echo '$SWAPFILE none swap sw 0 0' >> $FSTAB"; else echo "$SWAPFILE none swap sw 0 0" >> "$FSTAB"; fi
+}
+
 write_compose_env() {
   local f="$SM_ROOT/compose/.env" site=":80"
   [[ -n "$DOMAIN" ]] && site="$DOMAIN"
@@ -228,6 +265,12 @@ write_compose_env() {
             "SERVERMIND_HTTPS_PORT=$HTTPS_PORT" "SERVERMIND_SITE_ADDRESS=$site"; do
     env_set "$f" "${kv%%=*}" "${kv#*=}"
   done
+  if (( LOW_MEMORY )); then
+    for kv in "SM_MEM_POSTGRES=320m" "SM_MEM_API=256m" "SM_MEM_WEB=224m" "SM_MEM_CADDY=48m" \
+              "SM_PG_SHARED_BUFFERS=64MB" "SM_PG_MAX_CONNECTIONS=30" "SM_WEB_NODE_OPTIONS=--max-old-space-size=160"; do
+      env_set "$f" "${kv%%=*}" "${kv#*=}"
+    done
+  fi
 }
 
 install_files() {
@@ -293,9 +336,11 @@ main() {
   preflight_resources
   (( DRY_RUN )) || [[ "$(id -u)" == "$REQUIRE_UID" ]] || die "запустите от root (sudo bash install.sh …), либо используйте --dry-run"
   check_ports
+  check_domain
   print_plan
   if (( DRY_RUN )); then log "dry-run: ничего не изменено"; return 0; fi
   confirm
+  setup_swap
   install_docker
   ghcr_login
   fetch_bundle

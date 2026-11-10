@@ -14,11 +14,13 @@ services:
   postgres:
     <<: *common
     image: postgres:16-alpine
+    # Настройки памяти по умолчанию = стандартные значения PostgreSQL; облегчённый режим переопределяет их через .env
+    command: ["postgres", "-c", "shared_buffers=${SM_PG_SHARED_BUFFERS:-128MB}", "-c", "max_connections=${SM_PG_MAX_CONNECTIONS:-100}"]
     env_file: ../env/postgres.env
     volumes: ["pgdata:/var/lib/postgresql/data"]
     networks: [backend]
     shm_size: 128m
-    mem_limit: 640m
+    mem_limit: ${SM_MEM_POSTGRES:-640m}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U servermind -d servermind"]
       interval: 10s
@@ -45,7 +47,7 @@ services:
     # backend — внутренняя сеть с БД; frontend нужна для исходящих SSH/HTTPS (серверы клиентов, AI-провайдеры)
     networks: [backend, frontend]
     depends_on: { postgres: { condition: service_healthy } }
-    mem_limit: 450m
+    mem_limit: ${SM_MEM_API:-450m}
     cap_drop: [ALL]
     pids_limit: 256
 
@@ -53,8 +55,10 @@ services:
     <<: *common
     image: ${SERVERMIND_WEB_IMAGE:?SERVERMIND_WEB_IMAGE не задан}
     networks: [frontend]
+    environment:
+      NODE_OPTIONS: ${SM_WEB_NODE_OPTIONS:-}
     depends_on: { api: { condition: service_healthy } }
-    mem_limit: 400m
+    mem_limit: ${SM_MEM_WEB:-400m}
     cap_drop: [ALL]
     pids_limit: 256
 
@@ -72,7 +76,7 @@ services:
       - caddy_config:/config
     networks: [frontend]
     depends_on: [web]
-    mem_limit: 96m
+    mem_limit: ${SM_MEM_CADDY:-96m}
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
 
