@@ -53,7 +53,7 @@ sudo bash install.sh --image-repo ghcr.io/<owner>/servermind --domain app.exampl
 ## 4. Повседневное
 | Действие | Команда |
 |---|---|
-| Статус последнего обновления | `cat /opt/servermind/state/last-update.json` · `journalctl -u servermind-update -n 50` |
+| Статус последнего обновления | `journalctl -u servermind-update -n 50` · `systemctl list-timers servermind-update.timer` · `cat /opt/servermind/state/last-update.json` (файл появляется только после первого фактического обновления или сбоя) |
 | Какая версия запущена | `cat /opt/servermind/state/deployed.env` |
 | Приостановить автообновление | `touch /opt/servermind/state/auto-update.disabled` (возобновить — удалить файл) |
 | Не обновлять во время работ | `touch /opt/servermind/state/maintenance.lock` |
