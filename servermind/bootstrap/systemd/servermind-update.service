@@ -1,0 +1,16 @@
+[Unit]
+Description=ServerMind auto-update (pull-based: бэкап БД, миграции, smoke-тест, откат)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=/opt/servermind/state/config
+
+[Service]
+Type=oneshot
+ExecStart=/opt/servermind/bin/update.sh
+TimeoutStartSec=20min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full

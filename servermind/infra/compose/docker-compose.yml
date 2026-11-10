@@ -1,0 +1,91 @@
+# ServerMind — production compose (один VPS 1–2 vCPU / 4 ГБ). Запускается из /opt/servermind/compose.
+# Образы ссылаются по digest (неизменяемо). Секреты — только в ../env/*.env (права 600), в git их нет.
+# Не используются: privileged, network_mode: host, docker.sock, публикация портов БД/API.
+name: servermind
+
+x-common: &common
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  postgres:
+    <<: *common
+    image: postgres:16-alpine
+    # Настройки памяти по умолчанию = стандартные значения PostgreSQL; облегчённый режим переопределяет их через .env
+    command: ["postgres", "-c", "shared_buffers=${SM_PG_SHARED_BUFFERS:-128MB}", "-c", "max_connections=${SM_PG_MAX_CONNECTIONS:-100}"]
+    env_file: ../env/postgres.env
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    networks: [backend]
+    shm_size: 128m
+    mem_limit: ${SM_MEM_POSTGRES:-640m}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U servermind -d servermind"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Разовая задача: миграции. Запускается обновлятором (профиль tools): docker compose --profile tools run --rm migrate
+  migrate:
+    image: ${SERVERMIND_API_IMAGE:?SERVERMIND_API_IMAGE не задан}
+    profiles: ["tools"]
+    command: ["alembic", "upgrade", "head"]
+    env_file: ../env/api.env
+    networks: [backend]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  api:
+    <<: *common
+    image: ${SERVERMIND_API_IMAGE:?SERVERMIND_API_IMAGE не задан}
+    env_file: ../env/api.env
+    # backend — внутренняя сеть с БД; frontend нужна для исходящих SSH/HTTPS (серверы клиентов, AI-провайдеры)
+    networks: [backend, frontend]
+    depends_on: { postgres: { condition: service_healthy } }
+    mem_limit: ${SM_MEM_API:-450m}
+    cap_drop: [ALL]
+    pids_limit: 256
+
+  web:
+    <<: *common
+    image: ${SERVERMIND_WEB_IMAGE:?SERVERMIND_WEB_IMAGE не задан}
+    networks: [frontend]
+    environment:
+      NODE_OPTIONS: ${SM_WEB_NODE_OPTIONS:-}
+    depends_on: { api: { condition: service_healthy } }
+    mem_limit: ${SM_MEM_WEB:-400m}
+    cap_drop: [ALL]
+    pids_limit: 256
+
+  caddy:
+    <<: *common
+    image: caddy:2-alpine
+    ports:
+      - "${SERVERMIND_HTTP_PORT:-80}:80"
+      - "${SERVERMIND_HTTPS_PORT:-443}:443"
+    environment:
+      SERVERMIND_SITE_ADDRESS: ${SERVERMIND_SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [frontend]
+    depends_on: [web]
+    mem_limit: ${SM_MEM_CADDY:-96m}
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+
+networks:
+  backend:
+    internal: true   # без выхода в интернет: здесь только БД, API и миграции
+  frontend: {}
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
