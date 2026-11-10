@@ -68,7 +68,9 @@ export function MonitoringView() {
             <CardHeader>
               <CardTitle>Нагрузка · {RANGES.find((r) => r.h === hours)?.label}</CardTitle>
               <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
-                {data && <Badge>опрос каждые {Math.round(data.intervalSec / 60)} мин</Badge>}
+                {data && (data.intervalSec > 0
+                  ? <Badge>опрос каждые {Math.round(data.intervalSec / 60)} мин</Badge>
+                  : <Badge tone="warning">периодический опрос не настроен: точки появляются при ручной проверке</Badge>)}
                 {coverage != null && <Badge tone={coverage < 50 ? "warning" : "neutral"}>покрытие данными: {coverage}%</Badge>}
                 {data?.source === "demo" && <Badge tone="warning">Демо-данные</Badge>}
               </div>

@@ -1,28 +1,34 @@
 # TASKS
 
-Статусы: ✅ сделано и проверено · 🟡 частично · ⬜ не начато. «Проверено» = запускалось в сессии (команды ниже).
+Статусы: ✅ сделано и проверено · 🟡 частично · ⬜ не начато. «Проверено» = запускалось в сессии (команды в README).
 
 ## Фаза 0 — Preflight и ADR
-- ✅ ADR 0001, ARCHITECTURE, SECURITY, IMPLEMENTATION_PLAN, .env.example, DESIGN_SYSTEM, threat-model, список зависимостей с лицензиями
-- 🟡 Preflight: выполнен только в песочнице сессии (Ubuntu 24.04, 4 vCPU/16 ГБ, Docker-демона нет). Целевого VPS нет, замеры RAM/диска на 1–2 vCPU/4 ГБ **не проводились**
+- ✅ ADR 0001, ARCHITECTURE, SECURITY, IMPLEMENTATION_PLAN, .env.example, DESIGN_SYSTEM, threat-model, список зависимостей
+- 🟡 Preflight выполнен только в песочнице (Ubuntu 24.04, 4 vCPU/16 ГБ, Python 3.13, PostgreSQL 16.15, Docker нет). Замеры на 1–2 vCPU/4 ГБ **не проводились**. Прод по ТЗ — Python 3.12: проверить на нём
 
-## Фаза 1 — UI и дизайн-система (web)
-- ✅ Токены V2, AppShell, SideNav, bottom nav + drawer, PageHeader, Stat/Server/Operation карточки, UsageMeter, график (SVG), ActionPlanCard, RiskBanner, ConfirmActionDialog (bottom sheet на mobile), EventLog, ExecutionProgress, SecretInput, Empty/Error/Skeleton, toast
-- ✅ 15 маршрутов (`npm run build`: 15 страниц)
-- ✅ Dev-фикстуры изолированы; в production-бандле 0 вхождений (grep по `.next`)
-- ✅ Проверки (фактически запускались): `tsc --noEmit` ok · vitest 42/42 · Playwright fixtures 122/122 (107 экран×ширина 320–1440 без overflow и ошибок консоли + axe serious/critical на 15 экранах × 1440/390, сценарии, скриншоты) · Playwright production 14/14
-- ✅ Скриншоты: `docs/design/screenshots/` (38 файлов, на всех ribbon «Демо-данные»)
-- 🟡 Сверка с PNG V2 — визуальная, не попиксельная; светлой темы нет (намеренно)
-- 🟡 Не проверялись: реальные устройства/Android, Lighthouse/CLS, размер бандла, брауз. кроме Chromium
-- ⬜ CI-воркфлоу (`.github/workflows/`) — пока пусто
+## Фаза 1 — UI (web)
+- ✅ 15 экранов, токены V2, mobile, состояния, dev-фикстуры (вырезаются из production). Тесты: vitest 42, Playwright fixtures/production — см. README
+- 🟡 Не проверялись: реальные устройства, Lighthouse/CLS, размер бандла, браузеры кроме Chromium
+- ⬜ CI-воркфлоу
 
-## Известные ограничения Фазы 1
-- Фикстуры — в памяти страницы: полная перезагрузка сбрасывает состояние
-- Одинаковые запросы (серверы/операции) дублируются между компонентами — добавить общий кэш при подключении API
-- Канонизация хеша плана сделана на клиенте; контракт должен совпасть с серверным (предложение: RFC 8785 JCS) — иначе подтверждение будет блокироваться
-- `next start` с `output: standalone` даёт предупреждение; в проде запускать `node .next/standalone/server.js`
-- Playwright использует предустановленный Chromium через `executablePath` (версии не совпадают); в CI — `playwright install chromium`
+## Фаза 2 — Auth, БД, онбординг серверов
+- ✅ FastAPI + SQLAlchemy 2 + Alembic; миграция 0001 (up/down/up и `alembic check` без расхождений); триггер append-only для `audit_events`
+- ✅ Вход: argon2id, cookie-сессии (HttpOnly, SameSite=Lax; токен в БД только SHA-256), CSRF-заголовок, idle/absolute-таймауты, ротация сессии, ограничение попыток входа, TOTP 2FA (обязателен owner/operator; код одноразовый — replay отклоняется; секрет шифруется AEAD)
+- ✅ Tenant-изоляция: `organization_id` только из сессии, чужой ресурс = 404 (IDOR-тесты); роли owner/operator/viewer
+- ✅ Политика адресов (SSRF): приватные/loopback/link-local/metadata/CGNAT/reserved, проверка всех DNS-ответов, подключение по проверенному IP, порты <1024 кроме 22, root запрещён
+- ✅ SSH (только чтение): закреплённый ключ хоста, подмена → блок до выполнения команд; вход по ключу; 7 фиксированных команд; вывод ограничен и очищается от секретов; недостающие данные = `null`
+- ✅ Приватный ключ сервиса на организацию: AEAD-шифрование (AES-256-GCM, привязка к организации), master key вне БД
+- ✅ API: `/auth/*`, `/me`, `/servers` (+probe, public-key, verify, metrics, services), `/healthz`, `/readyz`; аудит событий
+- ✅ Web подключён к API: CSRF, экран обязательной настройки 2FA
+- ✅ Проверки: pytest **100 passed** (реальная PostgreSQL + настоящий SSH-протокол на тестовом сервере asyncssh), ruff чисто, сквозной Playwright на реальном стеке (браузер → Next → FastAPI → PostgreSQL) **3/3**
+- ⬜ **Gate «VPS подключается по SSH» НЕ выполнен**: песочница не имеет исходящего SSH. Проверка на реальном сервере — шаги в README («Проверка на реальном VPS»)
+- 🟡 Ограничения: `client_ip` без доверенного proxy (Фаза 4, Caddy); периодического опроса нет (`intervalSec: 0`, точки появляются при ручной проверке); сессии/смена пароля/сброс 2FA не имеют UI и эндпоинтов (`/me/sessions`, `/me/policy` и др. — Фаза 5); веб-клиент не умеет добавлять приватные адреса (намеренно); логи служб (`/services/{unit}/logs`) не реализованы; не проверены: нагрузка, одновременные сессии, перезапуск БД
+- ⬜ Пароли: смена/сброс, политика сложности (сейчас ≥12 символов только в CLI)
 
-## Следующее
-- ⬜ Фаза 2: FastAPI, PostgreSQL+Alembic, сессии/2FA/CSRF, tenant-check, SSH host-key pinning, read-only метрики, SSRF-политика, шифрование секретов. **Gate:** подключение реального VPS (нужно разрешение владельца и тестовый VPS)
-- ⬜ Фазы 3–5 по `IMPLEMENTATION_PLAN.md`
+## Фаза 3–5
+- ⬜ AI-чат, планы и подтверждения (веб-экраны уже есть на фикстурах; backend нет)
+- ⬜ Worker, очередь, деплой, Caddy/HTTPS — только после отдельного разрешения владельца
+- ⬜ Кредиты/ledger, админка, performance-отчёт
+
+## Известные ограничения web
+- Фикстуры в памяти страницы (сброс при перезагрузке); дубли запросов между компонентами; хеш плана считается в браузере — нужен общий формат с сервером (предложение: RFC 8785); `next start` с `standalone` даёт предупреждение; Playwright использует предустановленный Chromium через `executablePath`

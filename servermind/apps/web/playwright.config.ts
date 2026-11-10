@@ -26,6 +26,8 @@ export default defineConfig({
   projects: [
     { name: "fixtures", testMatch: /(screens|flows|shots)\.spec\.ts/, use: { baseURL: "http://localhost:3100" } },
     { name: "production", testMatch: /production\.spec\.ts/, use: { baseURL: "http://localhost:3200" } },
+    // Реальный стек (веб + FastAPI + PostgreSQL), серверы поднимаются вручную — см. README «stack e2e»
+    { name: "stack", testMatch: /stack\.spec\.ts/, use: { baseURL: "http://localhost:3300" } },
   ],
   webServer: [
     { command: "npm run start:fixtures", url: "http://localhost:3100/login", reuseExistingServer: true, timeout: 60_000 },

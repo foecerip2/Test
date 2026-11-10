@@ -190,6 +190,8 @@ export const login = (email: string, password: string) => gate<{ twoFactorRequir
   return ok({ twoFactorRequired: true });
 });
 export const verify2fa = (code: string) => gate<{ ok: true }>(() => (/^\d{6}$/.test(code) ? ok({ ok: true as const }) : fail("validation", "Код — 6 цифр.")));
+export const setup2fa = () => gate(() => ({ secret: "DEMOSECRETNOTREAL234567", otpauthUri: "otpauth://totp/ServerMind:demo?secret=DEMOSECRETNOTREAL234567&issuer=ServerMind" }), 150);
+export const enable2fa = (code: string) => gate<{ ok: true }>(() => (/^\d{6}$/.test(code) ? ok({ ok: true as const }) : fail("validation", "Код — 6 цифр.")));
 export const logout = () => gate<{ ok: true }>(() => ({ ok: true as const }), 80);
 
 // ───────── servers ─────────

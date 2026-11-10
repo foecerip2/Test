@@ -24,11 +24,31 @@ const unavailable = <T,>(): Result<T> => ({
   message: "Серверная часть ServerMind недоступна: API ещё не подключён (Фаза 2) или не отвечает.",
 });
 
+// CSRF-токен сессии: только в памяти модуля (не в localStorage/sessionStorage). После перезагрузки страницы
+// восстанавливается запросом GET /me перед первой мутацией.
+let csrfToken: string | null = null;
+
+async function ensureCsrf(): Promise<void> {
+  if (csrfToken) return;
+  try {
+    const r = await fetch("/api/v1/me", { credentials: "same-origin", cache: "no-store" });
+    if (r.ok && (r.headers.get("content-type") ?? "").includes("application/json")) {
+      const j = (await r.json()) as { csrfToken?: unknown };
+      if (typeof j.csrfToken === "string") csrfToken = j.csrfToken;
+    } else await r.body?.cancel().catch(() => undefined);
+  } catch { /* бэкенд недоступен — основной запрос вернёт понятную ошибку */ }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
   try {
+    const mutating = method !== "GET";
+    if (mutating && path !== "/auth/login") await ensureCsrf();
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["content-type"] = "application/json";
+    if (mutating && csrfToken) headers["x-csrf-token"] = csrfToken;
     const res = await fetch(`/api/v1${path}`, {
       method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: "same-origin",
       cache: "no-store",
@@ -40,9 +60,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       return unavailable<T>();
     }
     const json = (await res.json()) as { detail?: string; message?: string } & Record<string, unknown>;
-    if (res.ok) return { ok: true, data: json as T };
+    if (res.ok) {
+      if (typeof json.csrfToken === "string") csrfToken = json.csrfToken;
+      if (path === "/auth/logout") csrfToken = null;
+      return { ok: true, data: json as T };
+    }
     const message = json.message ?? json.detail ?? `Ошибка ${res.status}`;
-    if (res.status === 401) return { ok: false, code: "unauthorized", message };
+    if (res.status === 401) { csrfToken = null; return { ok: false, code: "unauthorized", message }; }
     if (res.status === 403) return { ok: false, code: "forbidden", message };
     if (res.status === 404) return { ok: false, code: "not_found", message };
     if (res.status === 422 || res.status === 400) return { ok: false, code: "validation", message };
@@ -77,9 +101,13 @@ export const api = {
   auth: {
     me: () => pick<Me>((m) => m.me(), () => request("GET", "/me")),
     login: (email: string, password: string) =>
-      pick<{ twoFactorRequired: boolean }>((m) => m.login(email, password), () => request("POST", "/auth/login", { email, password })),
+      pick<{ twoFactorRequired: boolean; twoFactorSetupRequired?: boolean }>((m) => m.login(email, password), () => request("POST", "/auth/login", { email, password })),
     verify2fa: (code: string) =>
       pick<{ ok: true }>((m) => m.verify2fa(code), () => request("POST", "/auth/2fa", { code })),
+    /** Первичная настройка TOTP: секрет показывается один раз (для приложения-аутентификатора). */
+    setup2fa: () => pick<{ secret: string; otpauthUri: string }>((m) => m.setup2fa(), () => request("POST", "/auth/2fa/setup")),
+    enable2fa: (code: string) =>
+      pick<{ ok: true }>((m) => m.enable2fa(code), () => request("POST", "/auth/2fa/enable", { code })),
     logout: () => pick<{ ok: true }>((m) => m.logout(), () => request("POST", "/auth/logout")),
   },
 

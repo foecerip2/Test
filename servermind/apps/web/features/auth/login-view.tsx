@@ -14,7 +14,8 @@ import { InlineAlert } from "@/components/ui/states";
 
 export function LoginView() {
   const router = useRouter();
-  const [stage, setStage] = useState<"credentials" | "2fa">("credentials");
+  const [stage, setStage] = useState<"credentials" | "2fa" | "setup">("credentials");
+  const [totp, setTotp] = useState<{ secret: string; otpauthUri: string } | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -35,7 +36,28 @@ export function LoginView() {
     setBusy(false);
     if (!r.ok) { setFormError(r.message); return; }
     if (r.data.twoFactorRequired) setStage("2fa");
-    else router.push("/dashboard");
+    else if (r.data.twoFactorSetupRequired) {
+      // Владельцам и операторам 2FA обязательна: сразу предлагаем настроить
+      setBusy(true);
+      const s = await api.auth.setup2fa();
+      setBusy(false);
+      if (!s.ok) { setFormError(s.message); return; }
+      setTotp(s.data);
+      setStage("setup");
+    } else router.push("/dashboard");
+  };
+
+  const submitEnable = async (e: FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!/^\d{6}$/.test(code)) { setErrors({ code: "Код состоит из 6 цифр." }); return; }
+    setErrors({});
+    setBusy(true);
+    const r = await api.auth.enable2fa(code);
+    setBusy(false);
+    if (!r.ok) { setFormError(r.message); return; }
+    setTotp(null); // секрет больше не хранится в состоянии
+    router.push("/dashboard");
   };
 
   const submitCode = async (e: FormEvent) => {
@@ -103,6 +125,23 @@ export function LoginView() {
                 {process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" && <InlineAlert tone="warning" title="Демо-вход">Проверки нет: подойдёт любой email и пароль от 8 символов, затем 6 цифр кода. Реальная аутентификация — Фаза 2.</InlineAlert>}
                 <Button type="submit" className="w-full" loading={busy}>Войти <ArrowRight aria-hidden /></Button>
                 <p className="text-center text-sm text-text-muted">Нет приглашения? Обратитесь к владельцу пространства.</p>
+              </form>
+            ) : stage === "setup" && totp ? (
+              <form onSubmit={submitEnable} noValidate className="space-y-5" aria-labelledby="setup-title">
+                <div>
+                  <h2 id="setup-title" className="text-[26px] leading-8">Настройка 2FA</h2>
+                  <p className="mt-1 text-sm text-text-secondary">Для владельцев и операторов двухфакторная аутентификация обязательна. Добавьте ключ в приложение-аутентификатор и введите код.</p>
+                </div>
+                <div className="rounded-control border border-stroke bg-canvas p-3">
+                  <p className="label text-text-muted">Секретный ключ (показывается один раз)</p>
+                  <p className="mt-1 break-all font-mono text-sm" data-testid="totp-secret">{totp.secret}</p>
+                  <p className="mt-2 text-xs text-text-muted">Или откройте ссылку в приложении: <a className="break-all text-primary underline" href={totp.otpauthUri}>otpauth://…</a></p>
+                </div>
+                <Field label="Код из приложения" error={errors.code}>
+                  {(p) => <Input {...p} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" className="text-center font-mono text-lg tracking-[0.4em]" placeholder="000000" />}
+                </Field>
+                {formError && <InlineAlert tone="danger" title="Код не принят">{formError}</InlineAlert>}
+                <Button type="submit" className="w-full" loading={busy}>Включить 2FA и войти</Button>
               </form>
             ) : (
               <form onSubmit={submitCode} noValidate className="space-y-5" aria-labelledby="tfa-title">

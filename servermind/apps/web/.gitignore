@@ -10,3 +10,4 @@ e2e/output
 test-results
 playwright-report
 .next-dev
+.next-stack
