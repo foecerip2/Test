@@ -1,7 +1,10 @@
 # ServerMind — команды разработки (web). Backend/infra-цели добавятся в Фазах 2–4.
 WEB := apps/web
 
-.PHONY: install dev typecheck test build build-fixtures e2e shots audit
+.PHONY: install dev typecheck test build build-fixtures e2e shots audit test-bootstrap
+
+test-bootstrap: ## установщик и автообновление: shellcheck + тесты на поддельном docker (Docker не нужен)
+	bash bootstrap/tests/run.sh
 
 install:
 	cd $(WEB) && npm ci

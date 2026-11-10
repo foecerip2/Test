@@ -4,6 +4,12 @@ AI-системный администратор для Ubuntu VPS. **Стату
 
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) · [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`SECURITY.md`](SECURITY.md) · [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) · [`docs/decisions/`](docs/decisions)
 
+## Установка на VPS и автообновление
+Одна команда установки и автоматическое обновление при каждом обновлении GitHub (VPS сам забирает новый релиз: бэкап БД → миграции → smoke → откат при сбое; в GitHub нет доступа к серверу). Подробно — [`docs/operations/deployment.md`](docs/operations/deployment.md), решение — [ADR 0003](docs/decisions/0003-auto-deploy.md). **Реальный запуск на VPS ещё не выполнялся** (проверено на поддельном docker и статическими проверками).
+```bash
+sudo bash install.sh --image-repo ghcr.io/<owner>/servermind --dry-run   # сначала план: ничего не меняет
+```
+
 ## Web (apps/web)
 ```bash
 make install && make dev      # dev-фикстуры, ribbon «Демо-данные»
