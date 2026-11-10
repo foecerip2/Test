@@ -44,7 +44,7 @@ test("реальный стек: вход → обязательная наст�
   await page.getByRole("textbox", { name: "Код из приложения" }).fill(totp(secret));
   await page.getByRole("button", { name: "Включить 2FA и войти" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByText("Серверов пока нет")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "seed-web" }).first()).toBeVisible(); // реальный сервер из БД (посеян скриптом), а не фикстура
   const text = await page.locator("body").innerText();
   expect(text).not.toMatch(/Демо-данные|demo-/i);
   await expect(page.getByText(EMAIL)).toBeVisible(); // реальный пользователь из /me
@@ -77,6 +77,41 @@ test("реальный стек: публичный ключ сервиса и �
   const alert = page.getByRole("alert").filter({ hasText: "Не удалось получить отпечаток" });
   await expect(alert).toBeVisible({ timeout: 30_000 });
   await expect(alert).not.toContainText("CSRF");
+
+  // ───── Фаза 3: BYOK через интерфейс (реальный API, проверка ключа пропущена — провайдера из песочницы не вызываем) ─────
+  const KEY = "sk-STACKTESTKEY-0123456789abcdef";
+  await page.goto("/billing");
+  await page.getByRole("tab", { name: /Собственные ключи/ }).click();
+  await page.getByRole("listitem").filter({ hasText: "OpenAI" }).getByRole("button", { name: "Подключить" }).click();
+  const dlg = page.getByRole("dialog");
+  await dlg.getByLabel("API-ключ").fill(KEY);
+  await expect(dlg.getByRole("button", { name: "Подключить" })).toBeDisabled(); // без модели подключить нельзя
+  await dlg.getByLabel("Модель").fill("my-model");
+  await dlg.getByRole("checkbox", { name: /Пропустить проверку/ }).click();
+  await dlg.getByRole("button", { name: "Подключить" }).click();
+  await expect(page.getByLabel("Маска ключа")).toContainText("sk-••••cdef");
+  const body = await page.content();
+  expect(body).not.toContain("STACKTESTKEY");
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("STACKTESTKEY");
+
+  // ───── Фаза 3: подтверждение плана. Хеш из реальной БД проверяется браузером независимо (общий контракт Python ↔ TypeScript) ─────
+  const planId = process.env.STACK_PLAN_ID!;
+  await page.goto(`/operations/op_${planId}/approve`);
+  await expect(page.getByText("Хеш плана независимо пересчитан в браузере и совпадает")).toBeVisible();
+  const hashEl = page.locator("code[title]").first();
+  const h1 = await hashEl.innerText();
+  await page.getByRole("switch", { name: /Включить шаг/ }).click(); // изменение плана → сервер пересчитывает ревизию и хеш
+  await expect(page.getByText("Ревизия").locator("xpath=following-sibling::dd")).toHaveText("2");
+  await expect(hashEl).not.toHaveText(h1);
+  await expect(page.getByText("Хеш плана независимо пересчитан в браузере и совпадает")).toBeVisible(); // браузер = сервер и после изменения
+  await page.getByRole("button", { name: "Подтвердить…" }).click();
+  const confirm = page.getByRole("dialog");
+  await confirm.getByRole("checkbox").click();
+  await confirm.getByRole("button", { name: "Подтвердить и выполнить" }).click();
+  await expect(page.getByText("Подтверждение записано").first()).toBeVisible();
+  await expect(page.getByText("План уже подтверждён")).toBeVisible();
+  await expect(page.getByText(/ничего не выполнено/).first()).toBeVisible(); // честно: исполнителя ещё нет
+  await expect(page.getByRole("button", { name: "Подтвердить…" })).toHaveCount(0);
 });
 
 test("реальный стек: выход закрывает доступ", async ({ page }) => {

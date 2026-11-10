@@ -84,6 +84,8 @@ async function pick<T>(f: (m: Fx) => Promise<Result<T>>, real: () => Promise<Res
 
 export interface ProbeResult { fingerprint: string; keyType: string; source: "ssh" | "demo" }
 export interface VerifyResult { os: string; server: ServerSummary }
+/** Ответ реального API на подтверждение (Фаза 3): согласие записано, исполнитель появится в Фазе 4. */
+export interface ApprovalRecorded { planId: string; status: "approved"; executionAvailable: false; message: string }
 export interface PreflightCheck { id: string; label: string; status: "pass" | "warn" | "fail"; detail: string; blocking: boolean }
 export interface DeployInput { serverId: string; templateId: string; domain: string; envKeys: string[] }
 export interface Policy { requireApprovalR2: true; requireApprovalR3: true; planTtlMinutes: number; maxOperationsPerDay: number }
@@ -146,7 +148,7 @@ export const api = {
       pick<ActionPlan>((m) => m.setStepEnabled(id, stepId, enabled), () =>
         request("POST", `/action-plans/${encodeURIComponent(id)}/steps/${encodeURIComponent(stepId)}`, { enabled })),
     approve: (id: string, sig: { hash: string; revision: number }) =>
-      pick<Operation>((m) => m.approve(id, sig), () => request("POST", `/action-plans/${encodeURIComponent(id)}/approve`, sig)),
+      pick<Operation | ApprovalRecorded>((m) => m.approve(id, sig), () => request("POST", `/action-plans/${encodeURIComponent(id)}/approve`, sig)),
     reject: (id: string) =>
       pick<ActionPlan>((m) => m.reject(id), () => request("POST", `/action-plans/${encodeURIComponent(id)}/reject`)),
   },
@@ -170,7 +172,7 @@ export const api = {
     balance: () => pick<Balance>((m) => m.balance(), () => request("GET", "/billing/balance")),
     ledger: () => pick<LedgerEntry[]>((m) => m.ledger(), () => request("GET", "/billing/usage")),
     keys: () => pick<AiKey[]>((m) => m.keys(), () => request("GET", "/ai-keys")),
-    addKey: (input: { provider: Provider; key: string; skipValidation: boolean }) =>
+    addKey: (input: { provider: Provider; key: string; model: string; skipValidation: boolean }) =>
       pick<AiKey>((m) => m.addKey(input), () => request("POST", "/ai-keys", input)),
     deleteKey: (id: string) =>
       pick<{ ok: true }>((m) => m.deleteKey(id), () => request("DELETE", `/ai-keys/${encodeURIComponent(id)}`)),

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckboxField } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { EmptyState, ErrorState, InlineAlert } from "@/components/ui/states";
 import { SkeletonBlock } from "@/components/ui/skeleton";
@@ -32,15 +32,17 @@ const KIND: Record<LedgerEntry["kind"], string> = { credit: "Начислени�
 function AddKeyDialog({ provider, open, onOpenChange, onAdded }: { provider: (typeof PROVIDERS)[number] | null; open: boolean; onOpenChange: (o: boolean) => void; onAdded: () => void }) {
   const toast = useToast();
   const [value, setValue] = useState("");
+  const [model, setModel] = useState("");
   const [skip, setSkip] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const close = (o: boolean) => { if (!o) { setValue(""); setErr(null); setSkip(false); } onOpenChange(o); };
+  const close = (o: boolean) => { if (!o) { setValue(""); setModel(""); setErr(null); setSkip(false); } onOpenChange(o); };
+  const modelOk = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(model.trim());
   const submit = async () => {
     if (!provider) return;
     setBusy(true); setErr(null);
-    const r = await api.billing.addKey({ provider: provider.id, key: value.trim(), skipValidation: skip });
+    const r = await api.billing.addKey({ provider: provider.id, key: value.trim(), model: model.trim(), skipValidation: skip });
     setBusy(false);
     if (!r.ok) { setErr(r.message); return; }
     setValue("");
@@ -55,13 +57,16 @@ function AddKeyDialog({ provider, open, onOpenChange, onAdded }: { provider: (ty
           <Field label="API-ключ" error={err}>
             {(p) => <SecretInput {...p} value={value} onChange={(e) => setValue(e.target.value)} placeholder="Вставьте ключ" required />}
           </Field>
-          <InlineAlert tone="warning" title="Возможна оплата проверки">
-            При проверке выполняется минимальный запрос к API провайдера — он может быть тарифицирован на вашем аккаунте. Проверку можно пропустить: тогда ключ проверится при первом запросе.
+          <Field label="Модель" hint="Точное имя модели из документации провайдера. Список моделей у провайдеров меняется, поэтому мы его не подставляем.">
+            {(p) => <Input {...p} value={model} onChange={(e) => setModel(e.target.value)} placeholder="имя модели" autoCapitalize="off" spellCheck={false} required />}
+          </Field>
+          <InlineAlert tone="warning" title="Проверка ключа обращается к провайдеру">
+            Проверка запрашивает у провайдера список моделей (обычно не тарифицируется, но условия определяет провайдер). Её можно пропустить: тогда ключ проверится при первом запросе.
           </InlineAlert>
           <CheckboxField checked={skip} onCheckedChange={(v) => setSkip(v === true)} label="Пропустить проверку ключа" />
           <DialogFooter className="-mx-5 -mb-5 mt-2">
             <Button type="button" variant="ghost" onClick={() => close(false)}>Отмена</Button>
-            <Button type="submit" loading={busy} disabled={value.trim().length < 12}>Подключить</Button>
+            <Button type="submit" loading={busy} disabled={value.trim().length < 12 || !modelOk}>Подключить</Button>
           </DialogFooter>
         </form>
       </DialogContent>

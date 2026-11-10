@@ -17,7 +17,7 @@ import { ActionPlanCard, RiskBanner, useCountdown } from "@/features/operations/
 import { ConfirmActionDialog } from "@/features/operations/confirm-action-dialog";
 import { SourceBadge } from "@/features/status";
 
-function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation: Operation; reload: () => void }) {
+function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation: Operation | null; reload: () => void }) {
   const router = useRouter();
   const toast = useToast();
   const left = useCountdown(plan.expiresAt);
@@ -49,6 +49,13 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
     const r = await api.plans.approve(plan.id, { hash: plan.canonicalHash, revision: plan.revision });
     if (r.ok) {
       setOpen(false);
+      const rec = r.data as { executionAvailable?: boolean; message?: string };
+      if (rec.executionAvailable === false || !operation) {
+        // Реальный API Фазы 3: согласие записано, исполнитель ещё не подключён — ничего не выполняется
+        toast.push({ tone: "info", title: "Подтверждение записано", description: rec.message ?? "Исполнитель ещё не подключён: на сервере ничего не выполнено." });
+        reload();
+        return;
+      }
       toast.push({ tone: "success", title: "Подтверждено", description: "Операция поставлена на выполнение." });
       router.push(`/operations/${operation.id}`);
     } else { setErr(r.message); reload(); }
@@ -56,19 +63,27 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
 
   const reject = async () => {
     const r = await api.plans.reject(plan.id);
-    if (r.ok) { toast.push({ tone: "info", title: "План отклонён", description: "Изменения на сервере не вносились." }); router.push(`/operations/${operation.id}`); }
-    else toast.push({ tone: "error", title: "Не удалось отклонить", description: r.message });
+    if (r.ok) {
+      toast.push({ tone: "info", title: "План отклонён", description: "Изменения на сервере не вносились." });
+      if (operation) router.push(`/operations/${operation.id}`); else reload();
+    } else toast.push({ tone: "error", title: "Не удалось отклонить", description: r.message });
   };
+
+  const opHref = operation ? `/operations/${operation.id}` : "/assistant";
 
   return (
     <>
       <PageHeader
-        back={{ href: `/operations/${operation.id}`, label: "К операции" }}
+        back={{ href: opHref, label: operation ? "К операции" : "К ассистенту" }}
         title="Подтверждение плана"
         description={<span className="flex flex-wrap items-center gap-2">Проверьте шаги, параметры и риск. Ничего не выполняется до вашего подтверждения. <SourceBadge source={plan.source} /></span>}
       />
 
-      {plan.status === "approved" && <InlineAlert tone="success" title="План уже подтверждён" className="mb-5"><Link href={`/operations/${operation.id}`} className="text-primary underline">Открыть операцию</Link></InlineAlert>}
+      {plan.status === "approved" && (
+        <InlineAlert tone="success" title="План уже подтверждён" className="mb-5">
+          {operation ? <Link href={`/operations/${operation.id}`} className="text-primary underline">Открыть операцию</Link> : "Согласие записано. Исполнитель ещё не подключён — на сервере ничего не выполнено."}
+        </InlineAlert>
+      )}
       {plan.status === "rejected" && <InlineAlert tone="info" title="План отклонён" className="mb-5">Изменений на сервере не было.</InlineAlert>}
       {(plan.status === "expired" || (plan.status === "waiting_approval" && left <= 0)) && (
         <InlineAlert tone="warning" title="Срок действия плана истёк" className="mb-5">Подтвердить его нельзя. Попросите ассистента подготовить новый план.</InlineAlert>
@@ -90,7 +105,7 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
             <Button disabled={verified !== "ok"} onClick={() => { setErr(null); setOpen(true); }}><ShieldCheck aria-hidden /> Подтвердить…</Button>
           </div>
         )}
-        {!waiting && <Link href={`/operations/${operation.id}`} className={buttonVariants({ variant: "secondary", className: "w-fit" })}>К операции</Link>}
+        {!waiting && <Link href={opHref} className={buttonVariants({ variant: "secondary", className: "w-fit" })}>{operation ? "К операции" : "К ассистенту"}</Link>}
       </div>
 
       <ConfirmActionDialog open={open} onOpenChange={setOpen} plan={plan} onConfirm={confirm} error={err} />
@@ -99,19 +114,22 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
 }
 
 export function ApproveView({ operationId }: { operationId: string }) {
+  // Идентификатор вида op_<planId>: план доступен напрямую, а «Операция» (журнал исполнения) появится в Фазе 4
+  const derived = operationId.startsWith("op_") ? operationId.slice(3) : null;
   const op = useResource(() => api.operations.get(operationId), [operationId]);
-  const planId = op.state.status === "ready" ? op.state.data.planId : null;
+  const planId = derived ?? (op.state.status === "ready" ? op.state.data.planId : null);
+  const operation = op.state.status === "ready" ? op.state.data : null;
   const plan = useResource<ActionPlan | null>(
     async () => (planId ? api.plans.get(planId) : { ok: true as const, data: null }),
     [planId],
   );
 
-  if (op.state.status === "loading" || (op.state.status === "ready" && planId && plan.state.status === "loading")) {
+  if ((!derived && op.state.status === "loading") || (planId && plan.state.status === "loading")) {
     return <LoadingRegion label="Загрузка плана…"><SkeletonBlock className="mb-6 h-14 w-1/2" /><SkeletonBlock className="mx-auto h-96 max-w-4xl rounded-card" /></LoadingRegion>;
   }
-  if (op.state.status === "error") return <ErrorState code={op.state.code} message={op.state.message} onRetry={op.reload} />;
+  if (!derived && op.state.status === "error") return <ErrorState code={op.state.code} message={op.state.message} onRetry={op.reload} />;
   if (!planId) return <ErrorState code="not_found" message="У этой операции нет плана, требующего подтверждения." />;
   if (plan.state.status === "error") return <ErrorState code={plan.state.code} message={plan.state.message} onRetry={plan.reload} />;
   if (plan.state.status !== "ready" || !plan.state.data) return null;
-  return <ApprovePlan plan={plan.state.data} operation={op.state.data} reload={() => { void plan.reload(); void op.reload(); }} />;
+  return <ApprovePlan plan={plan.state.data} operation={operation} reload={() => { void plan.reload(); void op.reload(); }} />;
 }

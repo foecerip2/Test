@@ -54,3 +54,20 @@ describe("risk", () => {
     expect(planRisk({ steps: [step("a", { risk: "R3", enabled: false }), step("b", { risk: "R1" })] })).toBe("R1");
   });
 });
+
+// Контракт «браузер ↔ сервер»: те же векторы, что в apps/api/tests/test_plan_hash.py. Если тест упал — подтверждение планов сломано.
+describe("общий вектор хеша с backend (Python)", () => {
+  it("вектор A: включённые шаги, порядок ключей, выключенный шаг не входит в хеш", async () => {
+    const steps: PlanStep[] = [
+      step("s1", { tool: "service.restart", params: { unit: "nginx" }, risk: "R2" }),
+      step("s2", { tool: "http.healthcheck", params: { url: "http://127.0.0.1:8080/healthz", expect_status: 200, timeout_s: 10 }, risk: "R1", enabled: false }),
+    ];
+    const h = await computePlanHash({ id: "11111111-1111-4111-8111-111111111111", serverId: "00000000-0000-4000-8000-000000000002", revision: 3, steps, expiresAt: "2026-11-10T04:30:00Z" });
+    expect(h).toBe("4f125d2be9ffb9c848b0196481587c57beec87a705bc047e70b4ed59e485c331");
+  });
+  it("вектор B: Unicode, вложенные объекты, массив с null и булевыми значениями", async () => {
+    const steps = [step("s1", { tool: "x.test", params: { k: "Привет", n: [1, true, null], z: { b: 2, a: 1 } } as never, risk: "R0" })];
+    const h = await computePlanHash({ id: "p", serverId: "s", revision: 1, steps, expiresAt: "2026-11-10T04:30:00Z" });
+    expect(h).toBe("1833a6c2343477a0bb2f27a0709453d54bc46b9c9befcb1983f817be8b48fbcf");
+  });
+});

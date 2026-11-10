@@ -148,6 +148,7 @@ export interface AiKey {
   id: string;
   provider: Provider;
   masked: string;
+  model?: string;
   createdAt: string;
   status: "valid" | "unchecked" | "invalid";
 }

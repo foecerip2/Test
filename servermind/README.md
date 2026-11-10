@@ -1,6 +1,6 @@
 # ServerMind
 
-AI-системный администратор для Ubuntu VPS. **Статус: Фазы 0–2.** Есть web-интерфейс и backend (вход, 2FA, тенанты, подключение серверов по SSH только на чтение). AI-чат, планы, worker, деплой, биллинг — не реализованы. Подробно: [`TASKS.md`](TASKS.md).
+AI-системный администратор для Ubuntu VPS. **Статус: Фазы 0–3.** Есть web-интерфейс и backend (вход, 2FA, тенанты, подключение серверов по SSH только на чтение, AI-чат с BYOK, планы и подтверждения). Исполнение изменений (worker), деплой, кредиты — не реализованы: подтверждение плана пока только записывает согласие. AI-адаптеры не проверялись живыми ключами. Подробно: [`TASKS.md`](TASKS.md).
 
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) · [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`SECURITY.md`](SECURITY.md) · [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) · [`docs/decisions/`](docs/decisions)
 
