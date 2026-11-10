@@ -1,0 +1,4 @@
+.check { display: inline-flex; align-items: center; gap: 8px; min-height: var(--hit); padding: 0 14px; border: 1px solid var(--border-dark); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink-2); font-size: 0.8125rem; font-weight: 700; cursor: pointer; }
+.check:has(input:checked) { background: var(--green-tint); border-color: #8fc4aa; color: #145e4b; }
+.check:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }

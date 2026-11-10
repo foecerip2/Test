@@ -1,6 +1,7 @@
 /** Нормализация и разбор данных импорта. Чистые функции — покрыты unit-тестами. */
 
-const LEGAL_FORMS = /\b(ооо|оао|зао|пао|ип|ао|llc|ltd)\b/gi;
+// \b не работает с кириллицей в JS, поэтому границы слов задаются через lookaround.
+const LEGAL_FORMS = /(?<![а-яёa-z0-9])(ооо|оао|зао|пао|ип|ао|llc|ltd)(?![а-яёa-z0-9])/gi;
 
 export function normalizeName(raw: string): string {
   return raw
