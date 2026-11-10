@@ -176,7 +176,7 @@ test("BYOK: ключ не попадает в DOM и хранилище, пок�
   await page.getByRole("tab", { name: /Собственные ключи/ }).click();
   await page.getByRole("listitem").filter({ hasText: "Anthropic (Claude)" }).getByRole("button", { name: "Подключить" }).click();
   const dlg = page.getByRole("dialog");
-  await expect(dlg.getByText("Возможна оплата проверки")).toBeVisible();
+  await expect(dlg.getByText("Проверка ключа обращается к провайдеру")).toBeVisible();
   await dlg.getByLabel("API-ключ").fill(KEY);
   expect(await dlg.getByLabel("API-ключ").getAttribute("type")).toBe("password");
   await expect(dlg.getByRole("button", { name: "Подключить" })).toBeDisabled(); // без имени модели подключить нельзя
