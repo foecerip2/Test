@@ -18,7 +18,7 @@ NEW_WEB="ghcr.io/o/servermind-web@sha256:newweb"
 setup() {
   T="$(mktemp -d)"
   export SM_ROOT="$T/sm" SYSTEMD_DIR="$T/systemd" FAKE_LOG="$T/docker.log" FAKE_BUNDLE="$T/bundle" FAKE_API_DIGEST="$NEW_API" FAKE_FAIL=""
-  export DOCKER="$FAKE" SYSTEMCTL="$T/systemctl" SS="$T/ss" SM_NO_SYSLOG=1 SMOKE_TIMEOUT=2 SMOKE_INTERVAL=1
+  export DOCKER="$FAKE" SYSTEMCTL="$T/systemctl" SS="$T/ss" SM_NO_SYSLOG=1 SMOKE_TIMEOUT=2 SMOKE_INTERVAL=1 INSTALL_SMOKE_TIMEOUT=2
   export OS_RELEASE="$T/os-release" MEMINFO="$T/meminfo" MIN_DISK_MB=1 REQUIRE_UID="$(id -u)"
   mkdir -p "$SYSTEMD_DIR" "$FAKE_BUNDLE/infra/compose" "$FAKE_BUNDLE/infra/caddy" "$FAKE_BUNDLE/bootstrap/systemd"
   printf 'ID=ubuntu\nVERSION_ID="24.04"\n' > "$OS_RELEASE"

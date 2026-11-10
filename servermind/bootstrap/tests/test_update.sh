@@ -77,6 +77,15 @@ export FAKE_API_DIGEST="ghcr.io/o/servermind-api@sha256:newer" FAKE_FAIL="" FAKE
 check "обновился на новый" '[[ "$RC" == 0 && "$(status)" == ok && "$(env_val "$S/deployed.env" API)" == *newer ]]'
 check "failed.env очищен" '[[ -z "$(env_val "$S/failed.env" FAILED_API)" ]]'
 
+echo "== 3a. ошибка Compose или прежний web при живых эндпоинтах → откат"
+for failure in up stale_web; do
+  setup; export FAKE_FAIL="$failure" FAKE_OLD_WEB="$OLD_WEB"
+  printf '%s true\n' "$OLD_API" > "$FAKE_LOG.fakeapi"
+  printf '%s true\n' "$OLD_WEB" > "$FAKE_LOG.fakeweb"
+  run
+  check "$failure: новый релиз не отмечен успешным" '[[ "$RC" != 0 && "$(status)" == rolled_back && "$(env_val "$S/deployed.env" COMMIT)" == oldcommit ]]'
+done
+
 echo "== 4. откат тоже не прошёл → rollback_failed"
 setup; export FAKE_FAIL="smoke_all"; run
 check "статус rollback_failed и код 1 (требуется человек)" '[[ "$(status)" == rollback_failed && "$RC" == 1 ]]'

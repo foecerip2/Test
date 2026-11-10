@@ -173,11 +173,11 @@ class AuditEvent(Base):
 
 # ───────────────────────── Фаза 3: AI, планы, подтверждения ─────────────────────────
 class AiKey(Base):
-    """BYOK-ключ провайдера. Хранится только зашифрованным (AEAD); в API и UI — только маска."""
+    """Зашифрованный API-ключ или персональная сессия ChatGPT. API возвращает только метаданные."""
 
     __tablename__ = "ai_keys"
     __table_args__ = (UniqueConstraint("organization_id", "provider", name="uq_ai_key_org_provider"),
-                      CheckConstraint("provider in ('openai','anthropic','deepseek')", name="ck_ai_provider"),
+                      CheckConstraint("provider in ('openai','anthropic','deepseek','chatgpt')", name="ck_ai_provider"),
                       CheckConstraint("status in ('valid','unchecked','invalid')", name="ck_ai_key_status"))
     id: Mapped[uuid.UUID] = _pk()
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)

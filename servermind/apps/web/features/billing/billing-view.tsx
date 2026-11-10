@@ -1,115 +1,51 @@
 "use client";
 
-import { useState } from "react";
-import { KeyRound, Plus, Trash2, Zap } from "lucide-react";
+import Link from "next/link";
+import { KeyRound, Plus, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useToast } from "@/lib/toast";
 import { formatDateTimeUtc, formatNumber } from "@/lib/format";
-import type { AiKey, LedgerEntry, Provider } from "@/lib/types";
+import type { LedgerEntry } from "@/lib/types";
 import { PageHeader } from "@/components/layout/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckboxField } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog";
-import { Field, Input } from "@/components/ui/input";
-import { SecretInput } from "@/components/ui/secret-input";
 import { EmptyState, ErrorState, InlineAlert } from "@/components/ui/states";
 import { SkeletonBlock } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SourceBadge } from "@/features/status";
 
-const PROVIDERS: { id: Provider; name: string; note: string }[] = [
-  { id: "openai", name: "OpenAI", note: "Официальный API OpenAI" },
-  { id: "anthropic", name: "Anthropic (Claude)", note: "Официальный API Anthropic" },
-  { id: "deepseek", name: "DeepSeek", note: "Официальный API DeepSeek" },
-];
-
 const KIND: Record<LedgerEntry["kind"], string> = { credit: "Начисление", reserve: "Резерв", capture: "Списание", release: "Возврат резерва", adjustment: "Корректировка" };
-
-function AddKeyDialog({ provider, open, onOpenChange, onAdded }: { provider: (typeof PROVIDERS)[number] | null; open: boolean; onOpenChange: (o: boolean) => void; onAdded: () => void }) {
-  const toast = useToast();
-  const [value, setValue] = useState("");
-  const [model, setModel] = useState("");
-  const [skip, setSkip] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const close = (o: boolean) => { if (!o) { setValue(""); setModel(""); setErr(null); setSkip(false); } onOpenChange(o); };
-  const modelOk = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(model.trim());
-  const submit = async () => {
-    if (!provider) return;
-    setBusy(true); setErr(null);
-    const r = await api.billing.addKey({ provider: provider.id, key: value.trim(), model: model.trim(), skipValidation: skip });
-    setBusy(false);
-    if (!r.ok) { setErr(r.message); return; }
-    setValue("");
-    toast.push({ tone: "success", title: "Ключ подключён", description: "В интерфейсе хранится только маска." });
-    onAdded(); close(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={close}>
-      <DialogContent title={`Подключить ${provider?.name ?? ""}`} description="Ключ передаётся на сервер по HTTPS и не сохраняется в браузере.">
-        <form onSubmit={(e) => { e.preventDefault(); void submit(); }} className="space-y-4 p-5">
-          <Field label="API-ключ" error={err}>
-            {(p) => <SecretInput {...p} value={value} onChange={(e) => setValue(e.target.value)} placeholder="Вставьте ключ" required />}
-          </Field>
-          <Field label="Модель" hint="Точное имя модели из документации провайдера. Список моделей у провайдеров меняется, поэтому мы его не подставляем.">
-            {(p) => <Input {...p} value={model} onChange={(e) => setModel(e.target.value)} placeholder="имя модели" autoCapitalize="off" spellCheck={false} required />}
-          </Field>
-          <InlineAlert tone="warning" title="Проверка ключа обращается к провайдеру">
-            Проверка запрашивает у провайдера список моделей (обычно не тарифицируется, но условия определяет провайдер). Её можно пропустить: тогда ключ проверится при первом запросе.
-          </InlineAlert>
-          <CheckboxField checked={skip} onCheckedChange={(v) => setSkip(v === true)} label="Пропустить проверку ключа" />
-          <DialogFooter className="-mx-5 -mb-5 mt-2">
-            <Button type="button" variant="ghost" onClick={() => close(false)}>Отмена</Button>
-            <Button type="submit" loading={busy} disabled={value.trim().length < 12 || !modelOk}>Подключить</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 export function BillingView() {
   const toast = useToast();
   const mode = useResource(() => api.billing.getMode(), []);
   const balance = useResource(() => api.billing.balance(), []);
   const ledger = useResource(() => api.billing.ledger(), []);
-  const keys = useResource(() => api.billing.keys(), []);
-  const [adding, setAdding] = useState<(typeof PROVIDERS)[number] | null>(null);
+  const me = useResource(() => api.auth.me(), []);
 
   const current = mode.state.status === "ready" ? mode.state.data.mode : "credits";
   const bal = balance.state.status === "ready" ? balance.state.data : null;
   const entries = ledger.state.status === "ready" ? ledger.state.data : [];
-  const keyList = keys.state.status === "ready" ? keys.state.data : [];
-  const keyFor = (p: Provider): AiKey | undefined => keyList.find((k) => k.provider === p);
 
   const setMode = async (m: "byok" | "credits") => {
     const r = await api.billing.setMode(m);
     if (!r.ok) toast.push({ tone: "error", title: "Не удалось переключить режим", description: r.message });
     void mode.reload();
   };
-  const remove = async (k: AiKey) => {
-    const r = await api.billing.deleteKey(k.id);
-    toast.push(r.ok ? { tone: "info", title: "Ключ удалён" } : { tone: "error", title: "Не удалось удалить", description: r.message });
-    void keys.reload();
-  };
 
   return (
     <>
-      <PageHeader title="Биллинг и AI" description="Выберите, как оплачиваются запросы к модели: собственным ключом (BYOK) или кредитами ServerMind." />
+      <PageHeader title="Биллинг и AI" description="Выберите, как оплачиваются запросы к модели: собственным подключением или кредитами ServerMind." />
 
-      {mode.state.status === "error" && <ErrorState className="mb-6" code={mode.state.code} message={mode.state.message} onRetry={() => { void mode.reload(); void balance.reload(); void ledger.reload(); void keys.reload(); }} />}
+      {mode.state.status === "error" && <ErrorState className="mb-6" code={mode.state.code} message={mode.state.message} onRetry={() => { void mode.reload(); void balance.reload(); void ledger.reload(); }} />}
 
       {mode.state.status !== "error" && (
         <Tabs value={current} onValueChange={(v) => void setMode(v as "byok" | "credits")}>
           <TabsList aria-label="Режим оплаты AI" className="mb-6">
             <TabsTrigger value="credits"><Zap aria-hidden className="size-4" /> AI-кредиты</TabsTrigger>
-            <TabsTrigger value="byok"><KeyRound aria-hidden className="size-4" /> Собственные ключи</TabsTrigger>
+            <TabsTrigger value="byok"><KeyRound aria-hidden className="size-4" /> Собственные подключения</TabsTrigger>
           </TabsList>
 
           <TabsContent value="credits" className="space-y-6">
@@ -191,39 +127,16 @@ export function BillingView() {
           </TabsContent>
 
           <TabsContent value="byok" className="space-y-6">
-            <InlineAlert tone="info" title="Ключи хранятся на сервере">Интерфейс показывает только маску ключа. Платформа не начисляет расходы за токены — они оплачиваются на вашем аккаунте у провайдера.</InlineAlert>
-            {keys.state.status === "loading" && <SkeletonBlock className="h-40 rounded-card" />}
-            {keys.state.status === "error" && <ErrorState compact code={keys.state.code} message={keys.state.message} onRetry={keys.reload} />}
-            {keys.state.status === "ready" && (
-              <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {PROVIDERS.map((p) => {
-                  const k = keyFor(p.id);
-                  return (
-                    <li key={p.id} className="flex flex-col gap-3 rounded-card border border-stroke bg-surface p-5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div><h3>{p.name}</h3><p className="text-xs text-text-muted">{p.note}</p></div>
-                        {k ? <Badge tone={k.status === "valid" ? "success" : k.status === "invalid" ? "danger" : "neutral"}>{k.status === "valid" ? "Подключён" : k.status === "invalid" ? "Недействителен" : "Не проверен"}</Badge> : <Badge>Не подключён</Badge>}
-                      </div>
-                      {k ? (
-                        <>
-                          <p className="font-mono text-sm text-text-secondary" aria-label="Маска ключа">{k.masked}</p>
-                          <p className="text-xs text-text-muted">Добавлен {formatDateTimeUtc(k.createdAt)}</p>
-                          <Button variant="secondary" size="sm" onClick={() => void remove(k)}><Trash2 aria-hidden /> Удалить ключ</Button>
-                        </>
-                      ) : (
-                        <Button variant="secondary" onClick={() => setAdding(p)}><Plus aria-hidden /> Подключить</Button>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+            <InlineAlert tone="info" title="Собственные подключения">
+              Провайдер учитывает запросы по вашему API-ключу или подключённой подписке ChatGPT. Владелец настраивает подключения в админке.
+            </InlineAlert>
+            {me.state.status === "ready" && me.state.data.role === "owner" && (
+              <Link className="text-sm font-medium text-primary underline underline-offset-4" href="/admin#ai-providers">Открыть настройки AI</Link>
             )}
-            <p className="text-sm text-text-muted">Список доступных моделей определяется провайдером после проверки ключа и в этой версии не отображается.</p>
           </TabsContent>
         </Tabs>
       )}
 
-      <AddKeyDialog provider={adding} open={adding != null} onOpenChange={(o) => { if (!o) setAdding(null); }} onAdded={() => void keys.reload()} />
     </>
   );
 }

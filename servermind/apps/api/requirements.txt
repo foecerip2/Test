@@ -8,6 +8,7 @@ psycopg==3.3.8
 psycopg-binary==3.3.8
 pydantic==2.14.3
 pydantic-settings==2.16.2
+PyJWT==2.15.1
 PyOTP==2.10.0
 SQLAlchemy==2.1.8
 starlette==1.10.0

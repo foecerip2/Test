@@ -52,8 +52,17 @@ env_set() { # env_set FILE KEY VALUE (атомарно)
 
 free_mb() { df -Pm "$SM_ROOT" | awk 'NR==2 {print $4}'; }
 
-# Smoke-тесты: API готов (проверяет PostgreSQL), веб отвечает, Caddy запущен.
+container_matches_image() {
+  local service="$1" expected="$2" cid image_id
+  cid="$(dc ps -q "$service" 2>/dev/null)" || return 1
+  [[ -n "$cid" && -n "$expected" ]] || return 1
+  image_id="$("$DOCKER" image inspect --format '{{.Id}}' "$expected" 2>/dev/null)" || return 1
+  [[ -n "$image_id" ]] && [[ "$("$DOCKER" inspect -f '{{.Image}} {{.State.Running}}' "$cid" 2>/dev/null)" == "$image_id true" ]]
+}
+
+# Проверяем образы до HTTP-запросов: прежние контейнеры тоже могут успешно отвечать.
 smoke_ok() {
+  container_matches_image api "$1" && container_matches_image web "$2" || return 1
   dc exec -T api python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/readyz',timeout=3).status==200 else 1)" >/dev/null 2>&1 || return 1
   dc exec -T web node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1 || return 1
   local cid
@@ -62,9 +71,11 @@ smoke_ok() {
 }
 
 wait_smoke() {
-  local waited=0
+  local expected_api expected_web waited=0
+  expected_api="${1:-$(env_get "$COMPOSE_DIR/.env" SERVERMIND_API_IMAGE)}"
+  expected_web="${2:-$(env_get "$COMPOSE_DIR/.env" SERVERMIND_WEB_IMAGE)}"
   while (( waited < SMOKE_TIMEOUT )); do
-    smoke_ok && return 0
+    smoke_ok "$expected_api" "$expected_web" && return 0
     sleep "$SMOKE_INTERVAL"; waited=$((waited + SMOKE_INTERVAL))
   done
   return 1
@@ -88,11 +99,9 @@ backup_db() {
 }
 
 restore_previous_files() {
-  if [[ -d "$STATE/previous" ]]; then
-    cp -f "$STATE/previous/docker-compose.yml" "$COMPOSE_DIR/docker-compose.yml"
-    cp -f "$STATE/previous/Caddyfile" "$COMPOSE_DIR/Caddyfile"
+  cp -f "$STATE/previous/docker-compose.yml" "$COMPOSE_DIR/docker-compose.yml" &&
+    cp -f "$STATE/previous/Caddyfile" "$COMPOSE_DIR/Caddyfile" &&
     cp -f "$STATE/previous/.env" "$COMPOSE_DIR/.env"
-  fi
 }
 
 fail_release() { # fail_release RESULT MESSAGE — запомнить сломанный digest, чтобы не уйти в цикл повторов
@@ -103,9 +112,10 @@ fail_release() { # fail_release RESULT MESSAGE — запомнить слома
 
 rollback() {
   ulog "откат на предыдущий релиз"
-  restore_previous_files
-  dc up -d --remove-orphans >/dev/null 2>&1 || true
-  if wait_smoke; then
+  local previous_api previous_web
+  previous_api="$(env_get "$STATE/previous/.env" SERVERMIND_API_IMAGE)"
+  previous_web="$(env_get "$STATE/previous/.env" SERVERMIND_WEB_IMAGE)"
+  if restore_previous_files && dc up -d --remove-orphans >/dev/null && wait_smoke "$previous_api" "$previous_web"; then
     write_status "rolled_back" "$1 Выполнен откат на предыдущий релиз; сломанный релиз пропускается."
     ulog "откат выполнен успешно"
     return 0
@@ -163,8 +173,10 @@ update_main() {
 
   # 3) Сохраняем текущее состояние для отката
   rm -rf "$STATE/previous"; mkdir -p "$STATE/previous"
-  cp -f "$COMPOSE_DIR/docker-compose.yml" "$COMPOSE_DIR/Caddyfile" "$STATE/previous/" 2>/dev/null || true
-  cp -f "$COMPOSE_DIR/.env" "$STATE/previous/.env"
+  if ! cp -f "$COMPOSE_DIR/docker-compose.yml" "$COMPOSE_DIR/Caddyfile" "$COMPOSE_DIR/.env" "$STATE/previous/"; then
+    write_status "snapshot_failed" "Не удалось сохранить конфигурацию для отката. Обновление отменено."
+    return 1
+  fi
 
   # 4) Бэкап БД ПЕРЕД миграциями; без читаемого бэкапа не обновляемся
   if ! backup_db; then
@@ -192,18 +204,24 @@ update_main() {
   fi
 
   # 7) Запуск новой версии и smoke-тесты
-  dc up -d --remove-orphans >/dev/null 2>&1 || true
-  if ! wait_smoke; then
-    fail_release "smoke_failed" "Новая версия не прошла проверку работоспособности за ${SMOKE_TIMEOUT} с."
-    rollback "Новая версия не прошла проверку."
+  local deploy_error=""
+  if ! dc up -d --remove-orphans >/dev/null; then
+    deploy_error="Docker Compose не смог запустить новую версию."
+  elif ! wait_smoke "$CANDIDATE_API" "$CANDIDATE_WEB"; then
+    deploy_error="Образы или работоспособность новой версии не подтверждены за ${SMOKE_TIMEOUT} с."
+  fi
+  if [[ -n "$deploy_error" ]]; then
+    fail_release "deploy_failed" "$deploy_error"
+    rollback "$deploy_error"
     return 1
   fi
 
   # 8) Успех
-  env_set "$STATE/deployed.env" API "$CANDIDATE_API"
-  env_set "$STATE/deployed.env" WEB "$CANDIDATE_WEB"
-  env_set "$STATE/deployed.env" COMMIT "$CANDIDATE_COMMIT"
-  env_set "$STATE/deployed.env" DEPLOYED_AT "$(date -u +%FT%TZ)"
+  local deployed_tmp
+  deployed_tmp="$(mktemp "$STATE/deployed.XXXXXX")"
+  printf 'API=%s\nWEB=%s\nCOMMIT=%s\nDEPLOYED_AT=%s\n' \
+    "$CANDIDATE_API" "$CANDIDATE_WEB" "$CANDIDATE_COMMIT" "$(date -u +%FT%TZ)" > "$deployed_tmp"
+  mv -f "$deployed_tmp" "$STATE/deployed.env"
   : > "$STATE/failed.env"
   write_status "ok" "Обновлено до ${CANDIDATE_COMMIT:-unknown}."
   ulog "обновление завершено: ${CANDIDATE_COMMIT:-unknown}"

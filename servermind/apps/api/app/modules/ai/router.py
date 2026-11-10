@@ -6,7 +6,8 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.auth import AuthContext, client_ip, get_ctx
@@ -15,8 +16,8 @@ from app.core.permissions import ApiError, get_server_or_404, require_role
 from app.core.security import encrypt
 from app.db.models import AiKey, Message, Organization
 from app.db.session import get_db
-from app.modules.ai import service
-from app.modules.ai.providers import PROVIDERS
+from app.modules.ai import chatgpt, chatgpt_auth, service
+from app.modules.ai.providers import PROVIDERS, ProviderError
 from app.modules.audit import service as audit
 from app.modules.servers.schemas import CamelModel
 
@@ -59,13 +60,23 @@ def _out(k: AiKey) -> AiKeyOut:
                     created_at=k.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
 
-@router.get("/ai-keys", response_model=list[AiKeyOut])
+@router.get("/ai-keys", response_model=list[AiKeyOut], include_in_schema=False)
 def list_keys(ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> list[AiKeyOut]:
-    rows = db.scalars(select(AiKey).where(AiKey.organization_id == ctx.org_id).order_by(AiKey.created_at)).all()
+    visible = AiKey.provider != chatgpt.PROVIDER
+    if ctx.role == "owner":
+        visible = or_(visible, AiKey.created_by == ctx.user.id)
+    rows = db.scalars(select(AiKey).where(AiKey.organization_id == ctx.org_id, visible).order_by(AiKey.created_at)).all()
     return [_out(k) for k in rows]
 
 
-@router.post("/ai-keys", response_model=AiKeyOut, status_code=201)
+@router.get("/admin/ai-keys", response_model=list[AiKeyOut])
+def admin_list_keys(ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> list[AiKeyOut]:
+    require_role(ctx, "owner")
+    return list_keys(ctx, db)
+
+
+@router.post("/ai-keys", response_model=AiKeyOut, status_code=201, include_in_schema=False)
+@router.post("/admin/ai-keys", response_model=AiKeyOut, status_code=201)
 def add_key(body: AiKeyIn, request: Request, ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> AiKeyOut:
     require_role(ctx, "owner")  # секреты провайдеров — только владелец
     key = body.key.strip()
@@ -83,30 +94,41 @@ def add_key(body: AiKeyIn, request: Request, ctx: AuthContext = Depends(get_ctx(
         if result == "unavailable":
             raise ApiError(502, "ai_unavailable", "Не удалось проверить ключ: провайдер недоступен. Можно пропустить проверку.")
         status = "valid"
-    row = AiKey(organization_id=ctx.org_id, created_by=ctx.user.id, provider=body.provider, model=body.model, status=status, masked=_mask(key),
-                key_enc=encrypt(get_settings().master_key_bytes, key.encode(), service.key_aad(ctx.org_id, body.provider)))
-    db.add(row)
-    db.flush()
+    row = db.scalar(insert(AiKey).values(
+        organization_id=ctx.org_id, created_by=ctx.user.id, provider=body.provider, model=body.model, status=status, masked=_mask(key),
+        key_enc=encrypt(get_settings().master_key_bytes, key.encode(), service.key_aad(ctx.org_id, body.provider)),
+    ).on_conflict_do_nothing(constraint="uq_ai_key_org_provider").returning(AiKey))
+    if row is None:
+        raise ApiError(409, "duplicate", "Ключ этого провайдера уже подключён. Удалите его и добавьте новый.")
     audit.record(db, "ai_key.add", org_id=ctx.org_id, actor_id=ctx.user.id, target=body.provider, meta={"model": body.model, "status": status},
                  ip=client_ip(request))
     db.commit()
     return _out(row)
 
 
-@router.delete("/ai-keys/{key_id}")
+@router.delete("/ai-keys/{key_id}", include_in_schema=False)
+@router.delete("/admin/ai-keys/{key_id}")
 def delete_key(key_id: str, request: Request, ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> dict[str, bool]:
     require_role(ctx, "owner")
     try:
         kid = uuid.UUID(key_id)
     except ValueError:
         raise ApiError(404, "not_found", "Ключ не найден.") from None
-    row = db.scalar(select(AiKey).where(AiKey.id == kid, AiKey.organization_id == ctx.org_id))
+    row = db.scalar(select(AiKey).where(
+        AiKey.id == kid, AiKey.organization_id == ctx.org_id, or_(AiKey.provider != chatgpt.PROVIDER, AiKey.created_by == ctx.user.id),
+    ).with_for_update())
     if row is None:
         raise ApiError(404, "not_found", "Ключ не найден.")
+    result = {"ok": True}
+    if row.provider == chatgpt.PROVIDER:
+        try:
+            result["revoked"] = chatgpt_auth.revoke(chatgpt.decode(row), min(get_settings().ai_timeout_seconds, 10))
+        except ProviderError:
+            result["revoked"] = False
     audit.record(db, "ai_key.delete", org_id=ctx.org_id, actor_id=ctx.user.id, target=row.provider, ip=client_ip(request))
     db.delete(row)
     db.commit()
-    return {"ok": True}
+    return result
 
 
 @router.get("/billing/mode")

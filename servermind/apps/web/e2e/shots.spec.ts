@@ -72,7 +72,7 @@ test.describe("скриншоты", () => {
     await page.setViewportSize(D);
     await page.goto("/deploy"); await settle(page); await shot(page, "deploy-wizard-desktop-1440");
     await page.goto("/billing"); await settle(page); await shot(page, "billing-credits-desktop-1440");
-    await page.getByRole("tab", { name: /Собственные ключи/ }).click(); await shot(page, "billing-byok-desktop-1440");
+    await page.getByRole("tab", { name: /Собственные подключения/ }).click(); await shot(page, "billing-byok-desktop-1440");
     await page.goto("/monitoring"); await settle(page); await shot(page, "monitoring-populated-desktop-1440");
     await page.goto("/monitoring?demo=nohistory"); await settle(page); await shot(page, "monitoring-empty-desktop-1440");
     await page.goto("/servers?demo=error"); await settle(page, 20_000); await shot(page, "state-error-desktop-1440");

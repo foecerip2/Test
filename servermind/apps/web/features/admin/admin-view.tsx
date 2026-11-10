@@ -15,6 +15,7 @@ import { Field, Input } from "@/components/ui/input";
 import { ErrorState, InlineAlert } from "@/components/ui/states";
 import { SkeletonBlock } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { AiProvidersCard } from "./ai-providers-card";
 import { checkEmail } from "@/lib/validation";
 
 export function AdminView() {
@@ -60,8 +61,9 @@ export function AdminView() {
 
   return (
     <>
-      <PageHeader title="Админка" description="Закрытая бета: приглашения, тестовые кредиты, флаги функций и аварийная остановка исполнения." />
+      <PageHeader title="Админка" description="Подключение AI, приглашения, тестовые кредиты и управление платформой." />
       <div className="grid gap-6 xl:grid-cols-2">
+        <AiProvidersCard />
         <Card className="xl:col-span-2">
           <CardHeader>
             <div><CardTitle className="flex items-center gap-2"><PowerOff aria-hidden className="size-4 text-danger" /> Аварийная остановка исполнения (kill switch)</CardTitle><CardDescription className="mt-1">Останавливает запуск новых заданий на уровне backend и worker. Отмена текущих — best-effort.</CardDescription></div>
