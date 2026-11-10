@@ -6,3 +6,4 @@
 .sum strong { display: block; font-family: var(--font-head); font-size: 1.25rem; color: var(--ink); }
 .wide { max-width: 760px; }
 .tbl { max-height: 280px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; }
+:global(.dialog):has(.wide) { max-width: 760px; }
