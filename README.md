@@ -1,11 +1,6 @@
-# Репозиторий проектов
+# LeadHunter AI
 
-| Проект | Описание | Каталог |
-|---|---|---|
-| **LeadHunter AI** | Приватный кабинет для поиска и квалификации автосервисов, согласования сообщений и контроля ответов. Сайт + Android-приложение. | `apps/`, `infra/`, `docs/` |
-| **ServerMind** | Панель диагностики и управления Ubuntu VPS с AI-помощником. | [`servermind/`](servermind/) |
-
-## LeadHunter AI
+Приватный кабинет для поиска и квалификации автосервисов, согласования сообщений и контроля ответов. Сайт + Android-приложение.
 
 Статус: **Фаза 1** (интерфейс на демо-данных) завершена; впереди Фаза 2 (backend, вход). Деплой: GitHub Actions → одобрение владельца → VPS (`https://ai.vaylonet.ru`).
 
@@ -15,9 +10,3 @@
 - Исходный дизайн-пакет и ТЗ: [docs/design-reference/](docs/design-reference/)
 
 Запуск разработки: `pnpm install && pnpm dev` (Node 22). Проверки: `pnpm lint && pnpm typecheck && pnpm test && pnpm e2e`.
-
-## ServerMind
-
-- [Запуск и возможности](servermind/README.md)
-- [Развёртывание и автообновление](servermind/docs/operations/deployment.md)
-- [Архитектура](servermind/ARCHITECTURE.md)
