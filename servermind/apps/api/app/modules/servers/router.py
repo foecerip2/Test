@@ -170,7 +170,7 @@ def list_servers(ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(ge
 def add_server(body: AddServerIn, request: Request, ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> VerifyOut:
     require_role(ctx, "operator")
     try:
-        username = check_username(body.username)
+        username = check_username(body.username, accept_root_risk=body.accept_root_risk)
     except HostPolicyError as e:
         raise ApiError(422, e.code, e.message) from None
     host, ip = _target(body.host, body.port)
@@ -202,7 +202,9 @@ def add_server(body: AddServerIn, request: Request, ctx: AuthContext = Depends(g
         raise ApiError(409, "duplicate", "Такой сервер уже добавлен.") from None
     _store(db, server, facts, utcnow())
     audit.record(db, "server.add", org_id=ctx.org_id, actor_id=ctx.user.id, target=f"{host}:{body.port}",
-                 meta={"fingerprint": hk.fingerprint}, ip=client_ip(request))
+                 meta={"fingerprint": hk.fingerprint, "root": username == "root"}, ip=client_ip(request))
+    if username == "root":  # отдельное событие: вход под root выбран владельцем осознанно
+        audit.record(db, "server.root_access_accepted", org_id=ctx.org_id, actor_id=ctx.user.id, target=f"{host}:{body.port}", ip=client_ip(request))
     db.commit()
     return VerifyOut(os=facts.os or "—", server=_out(db, server))
 

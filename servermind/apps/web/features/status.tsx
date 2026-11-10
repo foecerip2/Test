@@ -39,6 +39,7 @@ export function JobStatusBadge({ status }: { status: JobStatus }) {
     failed: { tone: "danger", label: "Ошибка", icon: <XCircle aria-hidden /> },
     cancelled: { tone: "neutral", label: "Отменено", icon: <CircleSlash aria-hidden /> },
     expired: { tone: "neutral", label: "Истекло", icon: <Clock aria-hidden /> },
+    blocked: { tone: "warning", label: "Остановлено проверкой", icon: <ShieldAlert aria-hidden /> },
   };
   const m = map[status];
   return <Badge tone={m.tone} icon={m.icon}>{m.label}</Badge>;

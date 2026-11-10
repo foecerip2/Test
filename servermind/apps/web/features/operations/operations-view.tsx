@@ -19,6 +19,7 @@ const STATUS_OPTIONS: { value: "all" | JobStatus; label: string }[] = [
   { value: "failed", label: "С ошибкой" },
   { value: "cancelled", label: "Отменены" },
   { value: "expired", label: "Истекли" },
+  { value: "blocked", label: "Остановлены проверкой" },
 ];
 
 export function OperationsView() {

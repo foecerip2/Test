@@ -15,6 +15,7 @@ os.environ["DATABASE_URL"] = os.environ.get(
 os.environ["COOKIE_SECURE"] = "false"
 os.environ["ALLOW_PRIVATE_TARGETS"] = "true"  # только для тестов: цель — локальный fake sshd
 os.environ["ENVIRONMENT"] = "test"
+os.environ["WORKER_ENABLED"] = "false"  # воркер в тестах вызывается явно
 
 import pyotp  # noqa: E402
 import pytest  # noqa: E402
@@ -55,7 +56,7 @@ def _clean(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     with get_engine().begin() as c:
         c.execute(text(
             "TRUNCATE audit_events, login_attempts, server_metric_samples, server_credentials, servers, sessions, "
-            "memberships, users, organizations, ai_keys, conversations, messages, action_plans, approvals, ai_usage "
+            "memberships, users, organizations, ai_keys, conversations, messages, action_plans, approvals, ai_usage, jobs, job_steps "
             "RESTART IDENTITY CASCADE"))
     from app.modules.ai import service as ai_service  # noqa: PLC0415
     ai_service.reset_limiter()

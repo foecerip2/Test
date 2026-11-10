@@ -87,7 +87,7 @@ def cmd_check_host(a: argparse.Namespace) -> None:
     """Read-only проверка: шаг 1 — показать отпечаток ключа хоста; шаг 2 (--fingerprint) — подключиться и прочитать факты."""
     s = get_settings()
     try:
-        username = check_username(a.username)
+        username = check_username(a.username, accept_root_risk=a.accept_root_risk)
         host, ip = resolve_target(a.host, a.port)
     except HostPolicyError as e:
         sys.exit(f"Отклонено политикой: {e.message}")
@@ -128,6 +128,7 @@ def main() -> None:
     h.add_argument("--email", required=True)
     h.add_argument("--host", required=True)
     h.add_argument("--port", type=int, default=22)
+    h.add_argument("--accept-root-risk", action="store_true", help="разрешить вход под root (ключ ServerMind получит полный доступ)")
     h.add_argument("--username", default="servermind")
     h.add_argument("--fingerprint", default=None)
     h.set_defaults(fn=cmd_check_host)

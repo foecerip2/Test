@@ -258,3 +258,50 @@ class AiUsage(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[dt.datetime] = _now()
+
+
+class Job(Base):
+    """Задание исполнителя. В этой версии существует ТОЛЬКО режим «репетиция» (mode='rehearsal'): проверки выполняются,
+    команды на сервер не отправляются. CHECK на уровне БД не даёт создать задание другого режима."""
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        CheckConstraint("mode in ('rehearsal')", name="ck_job_mode"),
+        CheckConstraint("status in ('queued','running','succeeded','blocked','failed')", name="ck_job_status"),
+        UniqueConstraint("plan_id", "plan_revision", "mode", name="uq_job_plan_revision_mode"),  # идемпотентность
+        Index("ix_jobs_queue", "status", "created_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("action_plans.id", ondelete="CASCADE"), index=True)
+    server_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"), index=True)
+    plan_revision: Mapped[int] = mapped_column(Integer)
+    plan_hash: Mapped[str] = mapped_column(String(64))
+    mode: Mapped[str] = mapped_column(String(12), default="rehearsal")
+    status: Mapped[str] = mapped_column(String(10), default="queued")
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    lease_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[dt.datetime] = _now()
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class JobStep(Base):
+    """Результат шага задания. Append-only (триггер БД): журнал нельзя переписать задним числом."""
+
+    __tablename__ = "job_steps"
+    __table_args__ = (
+        CheckConstraint("status in ('rehearsed','blocked','failed','skipped')", name="ck_job_step_status"),
+        UniqueConstraint("job_id", "ord", name="uq_job_step_order"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    ord: Mapped[int] = mapped_column(Integer)
+    step_id: Mapped[str] = mapped_column(String(16))
+    tool: Mapped[str] = mapped_column(String(48))
+    status: Mapped[str] = mapped_column(String(10))
+    checks: Mapped[Any] = mapped_column(JSONB)          # [{name, ok, detail}]
+    planned_action: Mapped[str] = mapped_column(Text, default="")  # что БЫЛО БЫ выполнено (без секретов)
+    created_at: Mapped[dt.datetime] = _now()

@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 export function ExecutionProgress({ operation, plan }: { operation: Operation; plan?: ActionPlan | null }) {
   const steps = plan ? plan.steps.filter((s) => s.enabled) : Array.from({ length: operation.stepsTotal }, (_, i) => ({ id: `s${i}`, title: `Шаг ${i + 1}`, tool: "" }));
   const running = operation.status === "running";
-  const failed = operation.status === "failed";
+  const failed = operation.status === "failed" || operation.status === "blocked";
   const cancelled = operation.status === "cancelled" || operation.status === "expired";
 
   return (

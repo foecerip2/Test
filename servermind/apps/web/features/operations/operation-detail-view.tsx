@@ -32,6 +32,7 @@ export function OperationDetailView({ id }: { id: string }) {
   if (op.state.status === "error") return <ErrorState code={op.state.code} message={op.state.message} onRetry={op.reload} />;
 
   const o = op.state.data;
+  const rehearsal = o.mode === "rehearsal";
   const active = o.status === "running" || o.status === "queued" || o.status === "validating" || o.status === "waiting_approval";
 
   const cancel = async () => {
@@ -53,12 +54,18 @@ export function OperationDetailView({ id }: { id: string }) {
             {o.status === "waiting_approval" && o.planId && (
               <Link href={`/operations/${o.id}/approve`} className={buttonVariants()}><ShieldQuestion aria-hidden /> Проверить и подтвердить</Link>
             )}
-            {active && <Button variant="secondary" onClick={cancel} loading={cancelling}><Ban aria-hidden /> Отменить</Button>}
+            {active && !rehearsal && <Button variant="secondary" onClick={cancel} loading={cancelling}><Ban aria-hidden /> Отменить</Button>}
           </>
         }
       />
 
-      {(o.status === "failed" || o.status === "cancelled") && (
+      {rehearsal && (
+        <InlineAlert tone="info" title="Это репетиция" className="mb-5">
+          Исполнитель выполнил все проверки и показал, что БЫ сделал. На сервере ничего не выполнялось и не изменялось.
+          {o.status === "blocked" && " Репетиция остановлена проверкой: причина указана в журнале ниже."}
+        </InlineAlert>
+      )}
+      {(o.status === "failed" || o.status === "cancelled") && !rehearsal && (
         <InlineAlert tone="warning" title="Откат не выполнялся автоматически" className="mb-5">
           Уже выполненные шаги не отменяются. Проверьте состояние сервера и журнал ниже; при необходимости подготовьте новый план.
         </InlineAlert>

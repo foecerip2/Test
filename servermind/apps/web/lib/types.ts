@@ -59,7 +59,8 @@ export type JobStatus =
   | "succeeded"
   | "failed"
   | "cancelled"
-  | "expired";
+  | "expired"
+  | "blocked"; // репетиция остановлена проверкой (исполнитель в режиме «репетиция»)
 
 export type Risk = "R0" | "R1" | "R2" | "R3" | "R4" | "R5";
 
@@ -120,6 +121,8 @@ export interface Operation {
   stepsTotal: number;
   events: JobEvent[];
   source: DataSource;
+  /** "rehearsal": проверки без изменений, на сервер ничего не отправляется. */
+  mode?: "rehearsal";
 }
 
 export interface ToolCall {

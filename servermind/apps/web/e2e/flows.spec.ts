@@ -36,8 +36,12 @@ test("добавление сервера: SSRF-политика, root, ошиб
   await host.fill("10.0.0.5"); await probe.click();
   await expect(page.getByText("Приватные, loopback и link-local адреса запрещены")).toBeVisible();
   await host.fill("203.0.113.50"); await page.getByLabel("Пользователь").fill("root"); await probe.click();
-  await expect(page.getByText("Вход под root запрещён")).toBeVisible();
+  await expect(page.getByText("Подтвердите риск входа под root")).toBeVisible(); // без явного согласия root не пропускается
+  await expect(page.getByText("полный доступ root").first()).toBeVisible();
+  await page.getByRole("checkbox", { name: /Понимаю риск/ }).click();
+  await expect(page.getByText("Подтвердите риск входа под root")).toHaveCount(0);
   await page.getByLabel("Пользователь").fill("servermind");
+  await expect(page.getByRole("checkbox", { name: /Понимаю риск/ })).toHaveCount(0); // у обычного пользователя предупреждения нет
 
   await host.fill("host.invalid"); await probe.click();
   await expect(page.getByText("Не удалось разрешить DNS-имя")).toBeVisible();

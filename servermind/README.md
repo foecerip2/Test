@@ -39,6 +39,8 @@ python -m pytest                          # нужна тестовая БД (с
 3. Повторите с `--fingerprint SHA256:…` → CLI подключится и выведет ОС, uptime, CPU, RAM, диск, службы (JSON).
 Пароль root не используется нигде.
 
+**Вход под root (по желанию владельца).** В мастере «Добавить сервер» можно указать пользователя `root`: нужна явная галочка о риске (ключ ServerMind получит полный доступ root; через API — поле `acceptRootRisk`, в CLI — `--accept-root-risk`). Ключ добавляется в **`/root/.ssh/authorized_keys`** (домашний каталог root — `/root`, а не `/home/root`), в `sshd_config` должен быть разрешён вход root по ключу (`PermitRootLogin prohibit-password`). Что выполняет ServerMind, от пользователя не зависит: фиксированный список команд чтения. Рекомендуется всё же отдельный пользователь.
+
 ## Stack e2e (браузер → Next → FastAPI → PostgreSQL)
 Поднимите API на :8010 (пользователь `owner@example.com`, пароль `STACK_PASSWORD`), соберите web с `API_BASE_URL=http://127.0.0.1:8010 NEXT_DIST_DIR=.next-stack npx next build`, запустите `NEXT_DIST_DIR=.next-stack npx next start -p 3300`, затем `npx playwright test --project=stack`.
 

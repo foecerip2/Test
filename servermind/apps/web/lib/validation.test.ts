@@ -19,8 +19,8 @@ describe("порт, пользователь, email, домен", () => {
     expect(checkPort("22")).toEqual({ ok: true, port: 22 });
     for (const p of ["0", "65536", "abc", "", "22.5", "-1"]) expect(checkPort(p).ok).toBe(false);
   });
-  it("root запрещён, прочие имена — по шаблону", () => {
-    expect(checkUsername("root").ok).toBe(false);
+  it("root допустим по шаблону (риск подтверждается отдельно), прочие имена — по шаблону", () => {
+    expect(checkUsername("root").ok).toBe(true);
     expect(checkUsername("servermind").ok).toBe(true);
     expect(checkUsername("Bad Name").ok).toBe(false);
     expect(checkUsername("").ok).toBe(false);
