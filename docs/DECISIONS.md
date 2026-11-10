@@ -22,8 +22,8 @@ concurrency=2, recycle по памяти, состояние в PostgreSQL. Пе
 ## ADR-006 · Одна origin, cookie-сессии · proposed
 Caddy проксирует `/api`. Сессия `HttpOnly; Secure; SameSite=Lax`, CSRF double-submit, короткий TTL, rate limit, Argon2id, TOTP (опционально, Фаза 2).
 
-## ADR-007 · Деплой с ручным утверждением · proposed
-GitHub Environment `production` + required reviewer; образы по digest; отдельный `deploy`-пользователь без root; pin сторонних actions по SHA; backup перед миграциями; только backward-compatible миграции; авто-откат при провале smoke-теста.
+## ADR-007 · Деплой с ручным утверждением · superseded by ADR-014
+Исходная идея (GitHub Environment + required reviewer + SSH-деплой) заменена pull-моделью ADR-014: кнопка одобрения сохранена как «Publish release». Остаются в силе: сторонние actions закреплять по SHA перед продакшном; backup перед миграциями БД; только backward-compatible миграции; авто-откат при провале проверки здоровья.
 
 ## ADR-008 · Статусы · proposed
 Источник истины — машины состояний ТЗ §8; статусы прототипа — вычисляемое отображение.
