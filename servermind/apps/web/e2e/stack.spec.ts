@@ -125,6 +125,26 @@ test("реальный стек: публичный ключ сервиса и �
   await expect(page.getByText("Репетиция: Перезапуск nginx").first()).toBeVisible(); // таблица (desktop) и список (mobile) оба в DOM
   const ops = await page.locator("body").innerText();
   expect(ops).not.toMatch(/Демо-данные|demo-/i);
+
+  // ───── Фаза 5: кредиты. Режим переключается на сервере; администратор платформы выдаёт кредиты; баланс и ledger — из PostgreSQL ─────
+  await page.goto("/billing");
+  await expect(page.getByRole("tab", { name: /Собственные ключи/ })).toHaveAttribute("data-state", "active"); // реальный режим организации загружен: BYOK
+  await page.getByRole("tab", { name: /AI-кредиты/ }).click(); // PUT /billing/mode (на сервере заданы ключ платформы и цены)
+  await expect(page.getByText("Кредиты закончились")).toBeVisible(); // баланс 0 — честно, без выдуманных чисел
+  await expect(page.getByText("Режим кредитов не настроен")).toHaveCount(0);
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Выдать…" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Email пользователя").fill(EMAIL);
+  await dialog.getByLabel("Количество кредитов").fill("250");
+  await dialog.getByLabel("Причина (для аудита)").fill("e2e-проверка ledger");
+  await dialog.getByRole("button", { name: "Выдать", exact: true }).click();
+  await expect(page.getByText("Тестовые кредиты выданы")).toBeVisible();
+  await expect(page.getByText("credits.issued").first()).toBeVisible(); // запись аудита из реальной БД
+  await page.goto("/billing");
+  await expect(page.getByText("250").first()).toBeVisible();
+  await expect(page.getByText("Тестовые кредиты: e2e-проверка ledger").first()).toBeVisible();
+  await expect(page.getByText("Кредиты закончились")).toHaveCount(0);
 });
 
 test("реальный стек: выход закрывает доступ", async ({ page }) => {

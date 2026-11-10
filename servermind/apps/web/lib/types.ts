@@ -172,6 +172,8 @@ export interface Balance {
   reserved: number;
   dailyCap: number | null;
   monthlyCap: number | null;
+  /** Только реальный API: настроен ли на сервере ключ платформы и цены (иначе режим кредитов недоступен). */
+  creditsConfigured?: boolean;
 }
 
 export type DeploymentStatus = "preflight" | "waiting_approval" | "running" | "succeeded" | "failed";

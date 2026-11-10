@@ -49,6 +49,23 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = 60
     ai_max_iterations: int = 4
 
+    # --- Фаза 5: кредиты (режим ServerMind Credits). Цены НЕ выдуманы: их задаёт оператор платформы; пока не заданы — режим недоступен ---
+    platform_admin_emails: list[str] = []         # кто может выдавать кредиты и читать общий аудит (JSON-список в env)
+    platform_ai_provider: str = ""                # openai | anthropic | deepseek
+    platform_ai_model: str = ""
+    platform_ai_key: str = ""                     # ключ платформы: только из окружения, в БД и логи не попадает
+    price_in_per_1k: int = 0                      # кредитов (минимальных единиц) за 1000 входных токенов
+    price_out_per_1k: int = 0                     # кредитов за 1000 выходных токенов
+    price_list_version: str = ""                  # версия прайс-листа провайдера, записывается в проводку
+    credits_daily_cap: int | None = None          # лимит списаний организации за 24 ч (None — без лимита)
+    credits_monthly_cap: int | None = None        # лимит за 30 суток
+    stale_reservation_minutes: int = 10           # резерв без списания старше этого срока освобождается воркером
+
+    @property
+    def platform_ai_configured(self) -> bool:
+        return (self.platform_ai_provider in ("openai", "anthropic", "deepseek") and bool(self.platform_ai_model)
+                and bool(self.platform_ai_key) and self.price_in_per_1k > 0 and self.price_out_per_1k > 0)
+
     @field_validator("encryption_master_key")
     @classmethod
     def _key_must_be_32_bytes(cls, v: str) -> str:
