@@ -205,6 +205,20 @@ export interface Invite {
   usedBy: string | null;
 }
 
+/** AI-модель платформы (режим Credits): подключается администратором платформы; ключ наружу не отдаётся — только маска. */
+export interface PlatformModel {
+  id: string;
+  provider: Provider;
+  model: string;
+  masked: string;
+  status: "valid" | "unchecked" | "invalid";
+  active: boolean;
+  priceIn: number;  // кредитов за 1000 входных токенов (задаёт администратор по прайс-листу провайдера)
+  priceOut: number; // кредитов за 1000 выходных токенов
+  priceListVersion: string;
+  createdAt: string;
+}
+
 export interface FeatureFlag {
   key: string;
   label: string;

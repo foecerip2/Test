@@ -123,11 +123,14 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
     _guard(ctx)
     org = db.get(Organization, ctx.org_id)
     use_credits = org is not None and org.ai_mode == "credits"
+    key: AiKey | None = None
     key_id: uuid.UUID | None = None
-    if use_credits:  # ServerMind Credits: ключ платформы из окружения, списание по ledger
-        if not s.platform_ai_configured:
-            raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен на сервере (нет ключа платформы или цен). Используйте собственный ключ (BYOK).")
-        provider_name, model_name, api_key = s.platform_ai_provider, s.platform_ai_model, s.platform_ai_key
+    pai: credits_mod.PlatformAi | None = None
+    if use_credits:  # ServerMind Credits: модель платформы (подключена админом), списание по ledger
+        pai = credits_mod.resolve_platform_ai(db, s)
+        if pai is None:
+            raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен: администратор платформы не подключил модель. Используйте собственный ключ (BYOK).")
+        provider_name, model_name, api_key = pai.provider, pai.model, pai.api_key
     else:
         key = _pick_key(db, ctx)
         key_id = key.id
@@ -156,8 +159,8 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
     tools = tool_defs(can_propose=ctx.role in ("owner", "operator"))
 
     reservation_id: uuid.UUID | None = None
-    if use_credits:  # квота и резерв ДО обращения к провайдеру: без кредитов модель не вызывается
-        amount = credits_mod.estimate_reserve(sum(len(str(m.get("content") or "")) for m in messages) + len(SYSTEM_PROMPT), s)
+    if pai is not None:  # квота и резерв ДО обращения к провайдеру: без кредитов модель не вызывается
+        amount = credits_mod.estimate_reserve(sum(len(str(m.get("content") or "")) for m in messages) + len(SYSTEM_PROMPT), pai, s)
         credits_mod.check_caps(ctx.org_id, amount, s)
         reservation_id = credits_mod.reserve_for_chat(ctx.org_id, ctx.user.id, msg_id, amount)
 
@@ -208,10 +211,10 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
             credits_mod.release_quiet(reservation_id, msg_id)
         raise
 
-    if reservation_id is not None:  # списание по фактическим токенам — в той же транзакции, что и ответ (всё или ничего)
+    if reservation_id is not None and pai is not None:  # списание по фактическим токенам — в той же транзакции, что и ответ (всё или ничего)
         try:
-            ledger.capture(db, reservation_id, credits_mod.cost(tokens_in, tokens_out, s), key=f"chat:{msg_id}:capture", model=model_name,
-                           tokens_in=tokens_in, tokens_out=tokens_out, note=f"AI-запрос; прайс-лист {s.price_list_version or 'не указан'}")
+            ledger.capture(db, reservation_id, credits_mod.cost(tokens_in, tokens_out, pai), key=f"chat:{msg_id}:capture", model=model_name,
+                           tokens_in=tokens_in, tokens_out=tokens_out, note=f"AI-запрос; прайс-лист {pai.version or 'не указан'}")
         except LedgerError as e:
             db.rollback()
             credits_mod.release_quiet(reservation_id, msg_id)
