@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     ssh_ops_per_minute: int = 10
     output_cap_bytes: int = 64 * 1024
 
+    worker_enabled: bool = True  # фоновый воркер; в режиме репетиции работает только с БД, на серверы не ходит
+    worker_poll_seconds: int = 3
     execution_enabled: bool = False  # kill switch для мутаций (Фаза 4); в Фазах 2–3 ничего не исполняется
 
     # --- Фаза 3: AI и планы ---

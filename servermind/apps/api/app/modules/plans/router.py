@@ -125,8 +125,8 @@ def approve(plan_id: str, body: ApproveIn, request: Request, ctx: AuthContext = 
         db.rollback()
         raise ApiError(409, "plan_closed", "План уже подтверждён.") from None
     return {"planId": str(plan.id), "status": "approved", "revision": plan.revision, "hash": plan.canonical_hash,
-            "executionAvailable": False,
-            "message": "Подтверждение записано. Исполнитель ещё не подключён (Фаза 4): на сервере ничего не выполнено."}
+            "executionAvailable": False, "rehearsalAvailable": True,
+            "message": "Подтверждение записано. Реальное исполнение выключено: на сервере ничего не выполнено. Доступна репетиция (проверки без изменений)."}
 
 
 @router.post("/{plan_id}/reject")

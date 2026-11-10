@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -9,6 +13,8 @@ from app.core.config import get_settings
 from app.core.permissions import ApiError
 from app.db.session import get_engine
 from app.modules.ai.router import router as ai_router
+from app.modules.executor import worker
+from app.modules.executor.router import router as executor_router
 from app.modules.identity.router import router as identity_router
 from app.modules.plans.router import router as plans_router
 from app.modules.servers.router import router as servers_router
@@ -17,8 +23,19 @@ from app.modules.servers.router import router as servers_router
 def create_app() -> FastAPI:
     s = get_settings()
     dev = s.environment == "development"
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        task = asyncio.create_task(worker.loop(s.worker_poll_seconds)) if s.worker_enabled else None
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
     app = FastAPI(title="ServerMind API", version="0.1.0", docs_url="/api/docs" if dev else None,
-                  redoc_url=None, openapi_url="/api/openapi.json" if dev else None)
+                  redoc_url=None, openapi_url="/api/openapi.json" if dev else None, lifespan=lifespan)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -55,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(servers_router, prefix="/api/v1")
     app.include_router(ai_router, prefix="/api/v1")
     app.include_router(plans_router, prefix="/api/v1")
+    app.include_router(executor_router, prefix="/api/v1")
     return app
 
 
