@@ -1,0 +1,15 @@
+alembic==1.20.1
+argon2-cffi==25.1.0
+asyncssh==2.24.1
+cryptography==50.0.2
+fastapi==0.162.2
+httpx==0.28.1
+psycopg==3.3.8
+psycopg-binary==3.3.8
+pydantic==2.14.3
+pydantic-settings==2.16.2
+PyJWT==2.15.1
+PyOTP==2.10.0
+SQLAlchemy==2.1.8
+starlette==1.10.0
+uvicorn==0.54.0

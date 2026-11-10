@@ -1,0 +1,13 @@
+node_modules
+.next
+.next-fx
+out
+.env
+.env.local
+next-env.d.ts
+*.tsbuildinfo
+e2e/output
+test-results
+playwright-report
+.next-dev
+.next-stack

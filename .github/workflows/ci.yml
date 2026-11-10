@@ -2,8 +2,10 @@ name: CI/CD
 
 on:
   pull_request:
+    paths-ignore: ['servermind/**', '.claude/**']
   push:
     branches: [main]
+    paths-ignore: ['servermind/**', '.claude/**']
   workflow_dispatch:
 
 permissions:

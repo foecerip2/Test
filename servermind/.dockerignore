@@ -1,0 +1,16 @@
+**/node_modules
+**/.venv
+**/.next
+**/.next-*
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/e2e/output
+**/test-results
+**/playwright-report
+**/.env
+**/.env.*
+!**/.env.example
+.git
+docs/design/screenshots
+bootstrap/tests
