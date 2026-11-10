@@ -1,6 +1,6 @@
 import type {
   ActionPlan, AiKey, AuditEvent, Balance, ChatMessage, DeployTemplate, Deployment, FeatureFlag, Invite,
-  JobEvent, LedgerEntry, Me, MetricSample, Operation, PlatformModel, Provider, Result, ServerSummary, SessionInfo,
+  AdminUser, JobEvent, LedgerEntry, Me, MetricSample, Operation, PlatformModel, Provider, Result, ServerSummary, SessionInfo,
 } from "@/lib/types";
 
 /**
@@ -83,6 +83,7 @@ async function pick<T>(f: (m: Fx) => Promise<Result<T>>, real: () => Promise<Res
 }
 
 export interface AddServerInput { name: string; host: string; port: number; username: string; fingerprint: string; acceptRootRisk?: boolean }
+export interface ExecutionStatus { configAllows: boolean; killed: boolean; orgEnabled: boolean; serverEnabled: boolean; effective: boolean; supportedOperations: string[] }
 export interface PlatformModelList { models: PlatformModel[]; envFallback: boolean; note: string }
 export interface AddPlatformModelInput { provider: Provider; model: string; key: string; priceIn: number; priceOut: number; priceListVersion: string; skipValidation: boolean }
 const DEMO_ONLY = { ok: false as const, code: "error" as const, message: "Подключение моделей платформы доступно только с реальным API." };
@@ -92,29 +93,31 @@ export interface VerifyResult { os: string; server: ServerSummary }
 export interface ApprovalRecorded { planId: string; status: "approved"; executionAvailable: false; rehearsalAvailable?: boolean; message: string }
 
 /** Ответ исполнителя (режим «репетиция») приводится к общему типу Operation. На сервер при этом ничего не отправляется. */
-interface RawJobStep { order: number; stepId: string; tool: string; status: string; checks: { name: string; ok: boolean; detail: string }[]; plannedAction: string; at: string }
+interface RawJobStep { order: number; stepId: string; tool: string; status: string; checks: { name: string; ok: boolean; detail: string }[]; plannedAction: string; output?: string; at: string }
 interface RawJob {
-  id: string; planId: string; serverId: string; serverName: string; title: string; risk: Operation["risk"]; actor: string;
+  id: string; planId: string; serverId: string; serverName: string; title: string; risk: Operation["risk"]; actor: string; mode?: "rehearsal" | "execute";
   status: Operation["status"]; summary: string; createdAt: string; startedAt: string | null; finishedAt: string | null;
   stepsDone: number; stepsTotal: number; steps?: RawJobStep[];
 }
-const STEP_LABEL: Record<string, string> = { rehearsed: "проверки пройдены", blocked: "остановлен", failed: "ошибка", skipped: "пропущен" };
+const STEP_LABEL: Record<string, string> = { rehearsed: "проверки пройдены", executed: "выполнен на сервере", blocked: "остановлен", failed: "ошибка", skipped: "пропущен" };
 export function adaptJob(j: RawJob): Operation {
   const events: JobEvent[] = [];
   let n = 0;
   const push = (at: string, level: JobEvent["level"], message: string, step?: string) => events.push({ id: `${j.id}:${n++}`, at, level, message, step });
-  push(j.createdAt, "info", "Репетиция поставлена в очередь. На сервере ничего не выполняется.");
+  const real = j.mode === "execute";
+  push(j.createdAt, real ? "warn" : "info", real ? "Исполнение поставлено в очередь. Команды будут выполнены на сервере обёрткой servermind-op." : "Репетиция поставлена в очередь. На сервере ничего не выполняется.");
   for (const s of j.steps ?? []) {
-    const level = s.status === "rehearsed" ? "info" : s.status === "skipped" ? "warn" : "error";
+    const level = s.status === "rehearsed" || s.status === "executed" ? "info" : s.status === "skipped" ? "warn" : "error";
     push(s.at, level, `Шаг ${s.order} · ${s.tool}: ${STEP_LABEL[s.status] ?? s.status}`, s.stepId);
     for (const c of s.checks.filter((c) => !c.ok)) push(s.at, "error", `Проверка «${c.name}» не пройдена: ${c.detail}`, s.stepId);
-    if (s.plannedAction) push(s.at, "info", `Было бы выполнено (не выполнялось): ${s.plannedAction}`, s.stepId);
+    if (s.plannedAction) push(s.at, "info", real && (s.status === "executed" || s.status === "failed") ? `Отправлено на сервер: ${s.plannedAction}` : `Было бы выполнено (не выполнялось): ${s.plannedAction}`, s.stepId);
+    if (real && s.output) push(s.at, s.status === "executed" ? "info" : "error", `Ответ сервера: ${s.output}`, s.stepId);
   }
   if (j.finishedAt) push(j.finishedAt, j.status === "succeeded" ? "info" : "warn", j.summary);
   return {
     id: j.id, planId: j.planId, title: j.title, serverId: j.serverId, serverName: j.serverName, status: j.status, risk: j.risk,
     actor: j.actor, createdAt: j.createdAt, startedAt: j.startedAt, finishedAt: j.finishedAt, stepsDone: j.stepsDone,
-    stepsTotal: j.stepsTotal, events, source: "ssh", mode: "rehearsal",
+    stepsTotal: j.stepsTotal, events, source: "ssh", mode: j.mode ?? "rehearsal",
   };
 }
 const mapOk = <A, B>(r: Result<A>, f: (a: A) => B): Result<B> => (r.ok ? { ok: true, data: f(r.data) } : r);
@@ -143,6 +146,9 @@ export const api = {
     enable2fa: (code: string) =>
       pick<{ ok: true }>((m) => m.enable2fa(code), () => request("POST", "/auth/2fa/enable", { code })),
     logout: () => pick<{ ok: true }>((m) => m.logout(), () => request("POST", "/auth/logout")),
+    /** Регистрация по пригласительному коду (закрытая бета). Только реальный API. */
+    register: async (input: { email: string; password: string; inviteCode: string; name?: string }): Promise<Result<{ ok: true }>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? { ok: false, code: "error", message: "Регистрация доступна только с реальным API." } : request("POST", "/auth/register", input),
   },
 
   servers: {
@@ -183,11 +189,25 @@ export const api = {
       pick<Operation | ApprovalRecorded>((m) => m.approve(id, sig), () => request("POST", `/action-plans/${encodeURIComponent(id)}/approve`, sig)),
     reject: (id: string) =>
       pick<ActionPlan>((m) => m.reject(id), () => request("POST", `/action-plans/${encodeURIComponent(id)}/reject`)),
+    /** РЕАЛЬНОЕ исполнение подтверждённого и отрепетированного плана (три выключателя). Только реальный API. */
+    execute: async (id: string): Promise<Result<Operation>> => {
+      if (process.env.NEXT_PUBLIC_DEV_FIXTURES === "1") return { ok: false, code: "error", message: "Исполнение доступно только с реальным API." };
+      return mapOk(await request<RawJob>("POST", `/action-plans/${encodeURIComponent(id)}/execute`), adaptJob);
+    },
     /** Репетиция подтверждённого плана: все проверки исполнителя, без изменений на сервере. Только реальный API. */
     rehearse: async (id: string): Promise<Result<Operation>> => {
       if (process.env.NEXT_PUBLIC_DEV_FIXTURES === "1") return { ok: false, code: "error", message: "Репетиция доступна только с реальным API." };
       return mapOk(await request<RawJob>("POST", `/action-plans/${encodeURIComponent(id)}/rehearse`), adaptJob);
     },
+  },
+
+  execution: {
+    status: async (serverId: string): Promise<Result<ExecutionStatus>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? { ok: false, code: "error", message: "Доступно только с реальным API." } : request("GET", `/execution/status?serverId=${encodeURIComponent(serverId)}`),
+    setOrg: async (enabled: boolean): Promise<Result<{ orgEnabled: boolean }>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? { ok: false, code: "error", message: "Доступно только с реальным API." } : request("PUT", "/org/execution", { enabled }),
+    setServer: async (serverId: string, enabled: boolean): Promise<Result<{ serverEnabled: boolean }>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? { ok: false, code: "error", message: "Доступно только с реальным API." } : request("PUT", `/servers/${encodeURIComponent(serverId)}/execution`, { enabled }),
   },
 
   deploy: {
@@ -234,6 +254,10 @@ export const api = {
     createInvite: () => pick<Invite>((m) => m.createInvite(), () => request("POST", "/admin/invites")),
     audit: () => pick<AuditEvent[]>((m) => m.audit(), () => request("GET", "/admin/audit")),
     /** Модели платформы (режим Credits): только администратор платформы, только реальный API. Ключ никогда не возвращается. */
+    users: async (): Promise<Result<AdminUser[]>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? { ok: true, data: [] } : request("GET", "/admin/users"),
+    setUserActive: async (id: string, active: boolean): Promise<Result<{ id: string; email: string; active: boolean }>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? DEMO_ONLY : request("POST", `/admin/users/${encodeURIComponent(id)}/active`, { active }),
     models: async (): Promise<Result<PlatformModelList>> =>
       process.env.NEXT_PUBLIC_DEV_FIXTURES === "1"
         ? { ok: true, data: { models: [], envFallback: false, note: "Демо-режим: модели платформы подключаются на реальном API." } }

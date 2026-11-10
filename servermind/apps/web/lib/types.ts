@@ -121,8 +121,8 @@ export interface Operation {
   stepsTotal: number;
   events: JobEvent[];
   source: DataSource;
-  /** "rehearsal": проверки без изменений, на сервер ничего не отправляется. */
-  mode?: "rehearsal";
+  /** "rehearsal": проверки без изменений, на сервер ничего не отправляется. "execute": реальное исполнение обёрткой на сервере. */
+  mode?: "rehearsal" | "execute";
 }
 
 export interface ToolCall {
@@ -218,6 +218,8 @@ export interface PlatformModel {
   priceListVersion: string;
   createdAt: string;
 }
+
+export interface AdminUser { id: string; email: string; name: string; role: string; active: boolean; createdAt: string | null }
 
 export interface FeatureFlag {
   key: string;

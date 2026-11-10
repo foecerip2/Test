@@ -43,6 +43,8 @@ class Organization(Base):
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(120))
     ai_mode: Mapped[str] = mapped_column(String(10), default="byok", server_default="byok")
+    # Выключатель исполнения уровня организации (по умолчанию ВЫКЛ). Нужны все три: конфигурация сервера, организация, сервер.
+    execution_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     created_at: Mapped[dt.datetime] = _now()
 
 
@@ -119,6 +121,7 @@ class Server(Base):
     last_error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     last_checked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_success_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))  # выключатель сервера
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[dt.datetime] = _now()
 
@@ -261,15 +264,18 @@ class AiUsage(Base):
 
 
 class Job(Base):
-    """Задание исполнителя. В этой версии существует ТОЛЬКО режим «репетиция» (mode='rehearsal'): проверки выполняются,
-    команды на сервер не отправляются. CHECK на уровне БД не даёт создать задание другого режима."""
+    """Задание исполнителя. Режимы: 'rehearsal' (проверки без отправки команд на сервер) и 'execute' (реальное исполнение за тремя
+    выключателями, ADR 0004). CHECK на уровне БД не даёт создать задание другого режима; «одно активное исполнение на сервер» —
+    частичный уникальный индекс; «ровно один раз на ревизию плана» — уникальность (plan, revision, mode)."""
 
     __tablename__ = "jobs"
     __table_args__ = (
-        CheckConstraint("mode in ('rehearsal')", name="ck_job_mode"),
+        CheckConstraint("mode in ('rehearsal','execute')", name="ck_job_mode"),
         CheckConstraint("status in ('queued','running','succeeded','blocked','failed')", name="ck_job_status"),
         UniqueConstraint("plan_id", "plan_revision", "mode", name="uq_job_plan_revision_mode"),  # идемпотентность
         Index("ix_jobs_queue", "status", "created_at"),
+        Index("uq_jobs_active_execute_per_server", "server_id", unique=True,
+              postgresql_where=text("mode = 'execute' and status in ('queued','running')")),
     )
     id: Mapped[uuid.UUID] = _pk()
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
@@ -277,7 +283,7 @@ class Job(Base):
     server_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"), index=True)
     plan_revision: Mapped[int] = mapped_column(Integer)
     plan_hash: Mapped[str] = mapped_column(String(64))
-    mode: Mapped[str] = mapped_column(String(12), default="rehearsal")
+    mode: Mapped[str] = mapped_column(String(12), default="rehearsal")  # rehearsal | execute
     status: Mapped[str] = mapped_column(String(10), default="queued")
     requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     lease_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -292,7 +298,7 @@ class JobStep(Base):
 
     __tablename__ = "job_steps"
     __table_args__ = (
-        CheckConstraint("status in ('rehearsed','blocked','failed','skipped')", name="ck_job_step_status"),
+        CheckConstraint("status in ('rehearsed','executed','blocked','failed','skipped')", name="ck_job_step_status"),
         UniqueConstraint("job_id", "ord", name="uq_job_step_order"),
     )
     id: Mapped[uuid.UUID] = _pk()
@@ -303,7 +309,8 @@ class JobStep(Base):
     tool: Mapped[str] = mapped_column(String(48))
     status: Mapped[str] = mapped_column(String(10))
     checks: Mapped[Any] = mapped_column(JSONB)          # [{name, ok, detail}]
-    planned_action: Mapped[str] = mapped_column(Text, default="")  # что БЫЛО БЫ выполнено (без секретов)
+    planned_action: Mapped[str] = mapped_column(Text, default="")  # что БЫЛО БЫ выполнено / что выполнено (без секретов)
+    output: Mapped[str] = mapped_column(Text, default="")          # ответ обёртки на сервере (очищен от секретов, ограничен по размеру)
     created_at: Mapped[dt.datetime] = _now()
 
 
@@ -391,3 +398,27 @@ class PlatformModel(Base):
     price_list_version: Mapped[str] = mapped_column(String(40), default="")
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[dt.datetime] = _now()
+
+
+class FeatureFlag(Base):
+    """Флаги функций и kill switch платформы (ключ → включено). Значения по умолчанию заданы в коде (modules/admin/flags.py)."""
+
+    __tablename__ = "feature_flags"
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Invite(Base):
+    """Пригласительный код закрытой беты: одноразовый, со сроком. Видим только администратору платформы."""
+
+    __tablename__ = "invites"
+    __table_args__ = (UniqueConstraint("code", name="uq_invite_code"),)
+    id: Mapped[uuid.UUID] = _pk()
+    code: Mapped[str] = mapped_column(String(40))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[dt.datetime] = _now()
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    used_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

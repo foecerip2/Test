@@ -34,6 +34,23 @@ describe("adaptJob (ответ исполнителя → Operation)", () => {
     expect(op.events.find((e) => e.message.includes("пропущен"))?.level).toBe("warn");
   });
 
+  it("реальное исполнение: режим execute, ответ сервера и отправленная команда в журнале", () => {
+    const op = adaptJob({
+      ...base, mode: "execute", status: "failed", stepsDone: 1, stepsTotal: 2, summary: "Исполнено шагов: 1 из 2.",
+      steps: [
+        { order: 1, stepId: "s1", tool: "service.restart", status: "executed", checks: [], plannedAction: "sudo -n /usr/local/sbin/servermind-op service.restart '{}'", output: "nginx.service: active", at: base.startedAt },
+        { order: 2, stepId: "s2", tool: "http.healthcheck", status: "failed", checks: [], plannedAction: "sudo -n /usr/local/sbin/servermind-op http.healthcheck '{}'", output: "HTTP 503, ожидалось 200", at: base.startedAt },
+      ],
+    });
+    expect(op.mode).toBe("execute");
+    const text = op.events.map((e) => e.message).join("\n");
+    expect(text).toContain("Отправлено на сервер:");
+    expect(text).not.toContain("не выполнялось");
+    expect(op.events.find((e) => e.message.includes("nginx.service: active"))?.level).toBe("info");
+    expect(op.events.find((e) => e.message.includes("HTTP 503"))?.level).toBe("error");
+    expect(op.events[0]?.level).toBe("warn"); // постановка реального исполнения выделена как предупреждение
+  });
+
   it("список без шагов не падает", () => {
     expect(adaptJob({ ...base, status: "queued", finishedAt: null, startedAt: null, stepsDone: 0, stepsTotal: 1 }).events).toHaveLength(1);
   });

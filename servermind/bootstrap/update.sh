@@ -233,6 +233,13 @@ update_main() {
     install -m 0755 "$stage/bootstrap/update.sh" "$BIN_DIR/update.sh.new" && mv -f "$BIN_DIR/update.sh.new" "$BIN_DIR/update.sh"
     ulog "update.sh обновлён"
   fi
+  # Вспомогательные скрипты эксплуатации (если есть в релизе): проверка после перезагрузки и репетиция восстановления
+  local helper
+  for helper in restore-drill.sh post-reboot-check.sh; do
+    if [[ -f "$stage/bootstrap/$helper" ]] && ! cmp -s "$stage/bootstrap/$helper" "$BIN_DIR/$helper" 2>/dev/null; then
+      install -m 0755 "$stage/bootstrap/$helper" "$BIN_DIR/$helper.new" && mv -f "$BIN_DIR/$helper.new" "$BIN_DIR/$helper"
+    fi
+  done
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then update_main "$@"; fi

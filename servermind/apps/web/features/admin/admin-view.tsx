@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { AiProvidersCard } from "./ai-providers-card";
 import { checkEmail } from "@/lib/validation";
 import { PlatformModelsCard } from "@/features/admin/platform-models-card";
+import { UsersCard } from "@/features/admin/users-card";
 
 export function AdminView() {
   const toast = useToast();
@@ -101,6 +102,7 @@ export function AdminView() {
         </Card>
 
         <PlatformModelsCard />
+        <UsersCard />
 
         <Card>
           <CardHeader><CardTitle>Тестовые кредиты</CardTitle><Button size="sm" variant="secondary" onClick={() => setCreditOpen(true)}>Выдать…</Button></CardHeader>

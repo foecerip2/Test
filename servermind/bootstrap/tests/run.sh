@@ -3,7 +3,7 @@
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 rc=0
-for t in test_update.sh test_install.sh; do
+for t in test_update.sh test_install.sh test_postcheck.sh; do
   echo "################ $t"
   bash "$HERE/$t" || rc=1
 done

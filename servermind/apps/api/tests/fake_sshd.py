@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
+from collections.abc import Callable
 
 import asyncssh
 
@@ -45,6 +47,9 @@ class _Server(asyncssh.SSHServer):
 class FakeSshd:
     def __init__(self) -> None:
         self.commands: list[str] = []
+        self.wrapper_commands: list[str] = []
+        # ответ «обёртки servermind-op»: (код выхода, stdout). По умолчанию — успех. Тесты подменяют.
+        self.wrapper: Callable[[str], tuple[int, str]] = lambda cmd: (0, json.dumps({"ok": True, "op": "fake", "detail": "fake ok"}))
         self.authorized: list[asyncssh.SSHKey] = []
         self.port = 0
         self.fingerprint = ""
@@ -58,6 +63,12 @@ class FakeSshd:
     async def _handle(self, process: asyncssh.SSHServerProcess) -> None:
         cmd = process.command or ""
         self.commands.append(cmd)
+        if cmd.startswith("sudo -n /usr/local/sbin/servermind-op "):
+            self.wrapper_commands.append(cmd)
+            code, text = self.wrapper(cmd)
+            process.stdout.write(text + "\n")
+            process.exit(code)
+            return
         out = RESPONSES.get(cmd)
         if out is None:
             process.stderr.write("command not allowed\n")

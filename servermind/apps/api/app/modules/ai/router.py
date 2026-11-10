@@ -16,6 +16,7 @@ from app.core.permissions import ApiError, get_server_or_404, require_role
 from app.core.security import encrypt
 from app.db.models import AiKey, Message, Organization
 from app.db.session import get_db
+from app.modules.admin import flags
 from app.modules.ai import chatgpt, chatgpt_auth, service
 from app.modules.ai.providers import PROVIDERS, ProviderError
 from app.modules.audit import service as audit
@@ -141,6 +142,8 @@ def get_mode(ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db
 @router.put("/billing/mode")
 def set_mode(body: ModeBody, ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> dict[str, str]:
     require_role(ctx, "owner")
+    if body.mode == "credits" and not flags.is_enabled(db, "credits_mode"):
+        raise ApiError(409, "feature_disabled", "Режим кредитов временно отключён администратором платформы.")
     if body.mode == "credits" and credits_mod.resolve_platform_ai(db, get_settings()) is None:
         raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен: администратор платформы не подключил модель. Используйте собственные ключи (BYOK).")
     org = db.get(Organization, ctx.org_id)
@@ -165,6 +168,8 @@ def history(server: str = Query(...), ctx: AuthContext = Depends(get_ctx()), db:
 
 @router.post("/conversations/messages")
 def send(body: MessageIn, ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    if not flags.is_enabled(db, "ai_chat"):
+        raise ApiError(503, "feature_disabled", "AI-чат временно отключён администратором платформы.")
     srv = get_server_or_404(db, ctx, body.server_id)
     user_msg, assistant = service.run_chat(db, ctx, srv, body.text)
     return [service.to_chat_message(user_msg), service.to_chat_message(assistant)]

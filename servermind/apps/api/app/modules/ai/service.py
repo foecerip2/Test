@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.permissions import ApiError
 from app.core.security import SlidingWindowLimiter, decrypt, redact
 from app.db.models import ActionPlan, AiKey, AiUsage, Conversation, Message, Organization, Server, ServerMetricSample
+from app.modules.admin import flags
 from app.modules.ai import chatgpt
 from app.modules.ai import context as ctxmod
 from app.modules.ai.prompts import SYSTEM_PROMPT, tool_defs
@@ -123,6 +124,8 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
     _guard(ctx)
     org = db.get(Organization, ctx.org_id)
     use_credits = org is not None and org.ai_mode == "credits"
+    if use_credits and not flags.is_enabled(db, "credits_mode"):
+        raise ApiError(409, "feature_disabled", "Режим кредитов временно отключён администратором платформы.")
     key: AiKey | None = None
     key_id: uuid.UUID | None = None
     pai: credits_mod.PlatformAi | None = None

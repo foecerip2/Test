@@ -15,6 +15,7 @@ import { ErrorState, InlineAlert } from "@/components/ui/states";
 import { LoadingRegion, SkeletonBlock } from "@/components/ui/skeleton";
 import { ActionPlanCard, RiskBanner, useCountdown } from "@/features/operations/action-plan-card";
 import { ConfirmActionDialog } from "@/features/operations/confirm-action-dialog";
+import { ExecutionCard } from "@/features/operations/execution-card";
 import { SourceBadge } from "@/features/status";
 
 function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation: Operation | null; reload: () => void }) {
@@ -118,6 +119,7 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
         {plan.status === "approved" && !operation && (
           <Button className="w-fit" onClick={rehearse} loading={rehearsing}><FlaskConical aria-hidden /> Запустить репетицию</Button>
         )}
+        {plan.status === "approved" && !operation && <ExecutionCard plan={plan} />}
         {!waiting && <Link href={opHref} className={buttonVariants({ variant: "secondary", className: "w-fit" })}>{operation ? "К операции" : "К ассистенту"}</Link>}
       </div>
 

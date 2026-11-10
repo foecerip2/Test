@@ -52,3 +52,19 @@ def test_short_password_rejected(monkeypatch):
     monkeypatch.setenv("SM_PASSWORD", "short")
     with pytest.raises(SystemExit):
         run(monkeypatch, "create-user", "--email", "x@example.com")
+
+
+def test_ledger_verify_reports_ok_and_detects_a_tampered_wallet(monkeypatch, capsys, db, owner):
+    from app.modules.billing import ledger  # noqa: PLC0415
+
+    ledger.issue(db, owner.org_id, 500, key="cli-seed-0123456789", actor_id=None, note="seed")
+    db.commit()
+    run(monkeypatch, "ledger-verify")
+    assert "расхождений нет" in capsys.readouterr().out
+    db.execute(text("UPDATE wallets SET balance = 900"))  # кэш больше не равен сумме проводок
+    db.commit()
+    with pytest.raises(SystemExit) as e:
+        run(monkeypatch, "ledger-verify")
+    assert e.value.code == 1 and "balance 900" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        run(monkeypatch, "ledger-verify", "--org-id", str(owner.org_id))

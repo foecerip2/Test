@@ -159,15 +159,14 @@ async def _run(conn: asyncssh.SSHClientConnection, name: str, *, timeout: int, c
     return redact(out[:cap])
 
 
-async def collect_facts(
-    ip: str, port: int, username: str, private_key_pem: str, pinned_host_key_openssh: str,
-    *, connect_timeout: int, command_timeout: int, cap: int,
-) -> Facts:
-    """Подключение с закреплённым ключом хоста и сбор read-only фактов фиксированным набором команд."""
+async def _connect(ip: str, port: int, username: str, private_key_pem: str, pinned_host_key_openssh: str, *,
+                   connect_timeout: int, username_for_errors: str | None = None) -> asyncssh.SSHClientConnection:
+    """Подключение ТОЛЬКО по ключу и ТОЛЬКО к серверу с закреплённым ключом хоста (StrictHostKeyChecking не отключается)."""
     pinned = asyncssh.import_public_key(pinned_host_key_openssh)
     client_key = asyncssh.import_private_key(private_key_pem)
+    who = username_for_errors or username
     try:
-        conn = await asyncio.wait_for(
+        return await asyncio.wait_for(
             asyncssh.connect(
                 ip, port, username=username, client_keys=[client_key], known_hosts=([pinned], [], []),
                 password=None, passphrase=None, agent_path=None, config=[],
@@ -179,7 +178,7 @@ async def collect_facts(
     except asyncssh.HostKeyNotVerifiable:
         raise SshError("host_key_changed", "Ключ сервера не совпал с подтверждённым. Подключение заблокировано: возможна подмена сервера.") from None
     except asyncssh.PermissionDenied:
-        raise SshError("auth_failed", f"Сервер отклонил ключ ServerMind. Добавьте публичный ключ в ~/.ssh/authorized_keys пользователя «{username}».") from None
+        raise SshError("auth_failed", f"Сервер отклонил ключ ServerMind. Добавьте публичный ключ в ~/.ssh/authorized_keys пользователя «{who}».") from None
     except TimeoutError:
         raise SshError("timeout", f"Таймаут соединения ({connect_timeout} с).") from None
     except ConnectionRefusedError:
@@ -187,6 +186,13 @@ async def collect_facts(
     except (OSError, asyncssh.Error) as e:
         raise SshError("unreachable", f"Не удалось подключиться: {redact(str(e))[:200]}") from None
 
+
+async def collect_facts(
+    ip: str, port: int, username: str, private_key_pem: str, pinned_host_key_openssh: str,
+    *, connect_timeout: int, command_timeout: int, cap: int,
+) -> Facts:
+    """Подключение с закреплённым ключом хоста и сбор read-only фактов фиксированным набором команд."""
+    conn = await _connect(ip, port, username, private_key_pem, pinned_host_key_openssh, connect_timeout=connect_timeout)
     async with conn:
         r = {n: await _run(conn, n, timeout=command_timeout, cap=cap) for n in ALLOWED_COMMANDS}
     used_mb, total_mb = parse_meminfo(r["meminfo"])
@@ -196,6 +202,36 @@ async def collect_facts(
         ram_used_mb=used_mb, ram_total_mb=total_mb, disk_used_gb=d_used, disk_total_gb=d_total,
         services=parse_services(r["unit_files"], r["is_active"]),
     )
+
+
+# Единственный разрешённый ИЗМЕНЯЮЩИЙ вызов: обёртка владельца (ADR 0004). Любая другая команда — программная ошибка.
+WRAPPER_PREFIX = "sudo -n /usr/local/sbin/servermind-op "
+
+
+@dataclass(frozen=True)
+class WrapperResult:
+    exit_status: int
+    stdout: str
+    stderr: str
+
+
+async def run_wrapper(
+    ip: str, port: int, username: str, private_key_pem: str, pinned_host_key_openssh: str, command: str,
+    *, connect_timeout: int, command_timeout: int, cap: int,
+) -> WrapperResult:
+    """Запускает ТОЛЬКО обёртку servermind-op. Строка команды формируется executor.ops.render (параметры проверены схемой каталога и
+    экранированы); сюда произвольная команда пройти не может — проверка префикса ниже."""
+    if not command.startswith(WRAPPER_PREFIX) or "\n" in command or "\r" in command:
+        raise ValueError("разрешён только вызов servermind-op")
+    conn = await _connect(ip, port, username, private_key_pem, pinned_host_key_openssh, connect_timeout=connect_timeout)
+    async with conn:
+        try:
+            res = await asyncio.wait_for(conn.run(command, check=False, input=None), timeout=command_timeout)
+        except TimeoutError:
+            raise SshError("timeout", f"Обёртка не ответила за {command_timeout} с. Состояние операции неизвестно: проверьте сервер.") from None
+    out = res.stdout if isinstance(res.stdout, str) else (res.stdout or b"").decode(errors="replace")
+    err = res.stderr if isinstance(res.stderr, str) else (res.stderr or b"").decode(errors="replace")
+    return WrapperResult(int(res.exit_status or 0), redact(out[:cap]), redact(err[:cap]))
 
 
 def generate_service_key(comment: str) -> tuple[str, str]:
