@@ -63,8 +63,8 @@ export const ConversationThread = forwardRef<HTMLHeadingElement, {
         </div>
         <div className="field" style={{ marginBottom: 12 }}>
           <label className="field-label" htmlFor="reply">Черновик ответа</label>
-          <textarea id="reply" className="textarea" style={{ minHeight: 90 }} value={reply} onChange={(e) => setReply(e.target.value)} disabled={locked} placeholder="Текст ответа" />
-          <p className="field-hint">Ответ отправляется вручную в канале — приложение его не отправляет.</p>
+          <textarea id="reply" className="textarea" style={{ minHeight: 90 }} value={reply} onChange={(e) => setReply(e.target.value)} disabled={locked} placeholder="Текст ответа" aria-describedby="reply-hint" />
+          <p className="field-hint" id="reply-hint">Ответ отправляется вручную в канале — приложение его не отправляет.</p>
         </div>
         <div className="row">
           <button className="btn" onClick={copy} disabled={locked}><Icon name="copy" /> Копировать</button>

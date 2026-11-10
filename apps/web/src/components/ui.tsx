@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Children, cloneElement, isValidElement, useRef, type ReactElement, type ReactNode } from "react";
 import { Icon } from "./Icon";
 import type { DisplayStatus, Tone } from "@/lib/api";
 import { ApiError } from "@/lib/api";
@@ -54,24 +54,27 @@ export function MetricCard({ label, value, foot, icon }: { label: string; value:
   );
 }
 
-export function EmptyState({ title, text, action, icon = "info" }: { title: string; text?: string; action?: ReactNode; icon?: string }) {
+/** level: 2 — если состояние стоит в панели без заголовка (иначе получится пропуск h1→h3). */
+export function EmptyState({ title, text, action, icon = "info", level = 3 }: { title: string; text?: string; action?: ReactNode; icon?: string; level?: 2 | 3 }) {
+  const H = level === 2 ? "h2" : "h3";
   return (
     <div className="state">
       <div className="state-icon"><Icon name={icon} /></div>
-      <h3>{title}</h3>
+      <H>{title}</H>
       {text && <p>{text}</p>}
       {action}
     </div>
   );
 }
 
-export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => void }) {
+export function ErrorState({ error, onRetry, level = 3 }: { error: Error; onRetry?: () => void; level?: 1 | 2 | 3 }) {
+  const H = (`h${level}`) as "h1" | "h2" | "h3";
   const denied = error instanceof ApiError && error.status === 403;
   const offline = typeof navigator !== "undefined" && !navigator.onLine;
   return (
     <div className="state error" role="alert">
       <div className="state-icon"><Icon name={denied ? "lock" : "alert"} /></div>
-      <h3>{denied ? "Нет доступа" : offline ? "Нет подключения к сети" : "Не удалось загрузить данные"}</h3>
+      <H>{denied ? "Нет доступа" : offline ? "Нет подключения к сети" : "Не удалось загрузить данные"}</H>
       <p>{denied ? "У вас нет прав для просмотра этого раздела." : offline ? "Проверьте интернет — данные обновятся при повторной попытке." : error.message || "Попробуйте ещё раз немного позже."}</p>
       {onRetry && <button className="btn" onClick={onRetry}><Icon name="refresh" /> Повторить</button>}
     </div>
@@ -107,25 +110,46 @@ export function ActivityFeed({ items }: { items: { id: string; icon: string; tit
 }
 
 export function Field({ label, htmlFor, hint, error, children }: { label: string; htmlFor: string; hint?: string; error?: string | null; children: ReactNode }) {
+  // Связываем подсказку и ошибку с полем (aria-describedby), сохраняя собственные id поля.
+  const own = Children.map(children, (ch) => {
+    if (!isValidElement(ch)) return ch;
+    const el = ch as ReactElement<{ id?: string; "aria-describedby"?: string }>;
+    if (el.props.id !== htmlFor) return ch;
+    const ids = new Set((el.props["aria-describedby"] ?? "").split(/\s+/).filter(Boolean));
+    if (hint && !error) ids.add(`${htmlFor}-hint`);
+    if (error) { ids.delete(`${htmlFor}-hint`); ids.add(`${htmlFor}-err`); }
+    return cloneElement(el, { "aria-describedby": ids.size ? [...ids].join(" ") : undefined });
+  });
   return (
     <div className="field">
       <label className="field-label" htmlFor={htmlFor}>{label}</label>
-      {children}
+      {own}
       {hint && !error && <p className="field-hint" id={`${htmlFor}-hint`}>{hint}</p>}
       {error && <p className="field-error" id={`${htmlFor}-err`} role="alert">{error}</p>}
     </div>
   );
 }
 
+/** Вкладки WAI-ARIA: roving tabindex, стрелки/Home/End переносят фокус и активируют вкладку. */
 export function Tabs({ tabs, value, onChange, label }: { tabs: { id: string; label: string }[]; value: string; onChange: (id: string) => void; label: string }) {
+  const list = useRef<HTMLDivElement>(null);
+  const go = (i: number) => {
+    const t = tabs[(i + tabs.length) % tabs.length]!;
+    onChange(t.id);
+    list.current?.querySelector<HTMLElement>(`#tab-${CSS.escape(t.id)}`)?.focus();
+  };
   return (
-    <div className="tabs" role="tablist" aria-label={label}>
-      {tabs.map((t) => (
-        <button key={t.id} role="tab" id={`tab-${t.id}`} aria-selected={value === t.id} aria-controls={`panel-${t.id}`} tabIndex={value === t.id ? 0 : -1} className="tab" onClick={() => onChange(t.id)}
+    <div className="tabs" role="tablist" aria-label={label} ref={list}>
+      {tabs.map((t, idx) => (
+        <button key={t.id} type="button" role="tab" id={`tab-${t.id}`} aria-selected={value === t.id} aria-controls={value === t.id ? `panel-${t.id}` : undefined} tabIndex={value === t.id ? 0 : -1} className="tab" onClick={() => onChange(t.id)}
           onKeyDown={(e) => {
-            const i = tabs.findIndex((x) => x.id === value);
-            if (e.key === "ArrowRight") onChange(tabs[(i + 1) % tabs.length]!.id);
-            if (e.key === "ArrowLeft") onChange(tabs[(i - 1 + tabs.length) % tabs.length]!.id);
+            const k = e.key;
+            if (k === "ArrowRight") go(idx + 1);
+            else if (k === "ArrowLeft") go(idx - 1);
+            else if (k === "Home") go(0);
+            else if (k === "End") go(tabs.length - 1);
+            else return;
+            e.preventDefault();
           }}>{t.label}</button>
       ))}
     </div>

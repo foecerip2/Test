@@ -14,7 +14,7 @@ export function ConversationList({ items, selectedId, onSelect }: { items: Conve
         const sel = c.id === selectedId;
         return (
           <li key={c.id}>
-            <button type="button" onClick={() => onSelect(c.id)} aria-current={sel ? "true" : undefined}
+            <button type="button" data-conv={c.id} onClick={() => onSelect(c.id)} aria-current={sel ? "true" : undefined}
               style={{ width: "100%", textAlign: "left", border: 0, borderBottom: "1px solid var(--border)", borderLeft: `3px solid ${sel ? "var(--accent)" : "transparent"}`, background: sel ? "#f0f7f2" : "var(--paper)", padding: "14px 16px", minHeight: 88, display: "block" }}>
               <span className="row between" style={{ gap: 8, flexWrap: "nowrap" }}>
                 <strong>{c.companyName}</strong>

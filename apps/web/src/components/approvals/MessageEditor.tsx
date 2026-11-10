@@ -37,9 +37,11 @@ export function MessageEditor({ draft, busy, onSave, onDirty }: {
       </Field>
       <Field label="Текст для согласования" htmlFor="draft-body" hint={`Версия ${draft.version} · ${draft.generator === "ai" ? "AI" : "шаблон без AI"} (${draft.promptVersion})`}>
         <textarea id="draft-body" className="textarea" value={body} onChange={(e) => setBody(e.target.value)} aria-describedby="draft-count draft-body-hint" />
-        <p className="small muted" id="draft-count" aria-live="polite" style={{ marginTop: 6 }}>
+        <p className="small muted" id="draft-count" style={{ marginTop: 6 }}>
           {body.length} / {MAX} символов{body.length > MAX && " — слишком длинно"}
         </p>
+        {/* Объявляем только превышение лимита, а не каждое нажатие клавиши. */}
+        <span className="sr-only" aria-live="polite">{body.length > MAX ? `Текст длиннее ${MAX} символов` : ""}</span>
       </Field>
       <div className="field"><ChannelPicker value={channel} onChange={setChannel} disabled={busy} /></div>
       <div className="row">

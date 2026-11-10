@@ -17,14 +17,14 @@ export default function OverviewPage() {
   );
 
   if (q.loading && !q.data) return <>{header}<LoadingSkeleton rows={6} /></>;
-  if (q.error && !q.data) return <>{header}<ErrorState error={q.error} onRetry={q.reload} /></>;
+  if (q.error && !q.data) return <>{header}<ErrorState level={2} error={q.error} onRetry={q.reload} /></>;
   const s = q.data!;
 
   if (s.companiesTotal === 0) {
     return (
       <>{header}
         <Panel>
-          <EmptyState icon="building" title="В базе пока нет компаний" text="Загрузите CSV со списком компаний или создайте поисковую кампанию. Метрики и приоритеты появятся после первых данных."
+          <EmptyState level={2} icon="building" title="В базе пока нет компаний" text="Загрузите CSV со списком компаний или создайте поисковую кампанию. Метрики и приоритеты появятся после первых данных."
             action={<Link href="/discovery" className="btn btn-primary"><Icon name="download" /> Импортировать CSV</Link>} />
         </Panel>
       </>
@@ -51,7 +51,7 @@ export default function OverviewPage() {
       {s.awaitingApproval > 0 && (
         <div className="callout">
           <div>
-            <h3>{s.awaitingApproval} {s.awaitingApproval === 1 ? "черновик ждёт" : "черновиков ждут"} вашего решения</h3>
+            <h2 style={{ fontSize: "1rem", marginBottom: 6 }}>{s.awaitingApproval} {s.awaitingApproval === 1 ? "черновик ждёт" : "черновиков ждут"} вашего решения</h2>
             <p>Проверьте текст предложения и статус согласия адресата. Одобрение текста не даёт права отправки.</p>
           </div>
           <Link href="/approvals" className="btn">Перейти к согласованию <Icon name="arrow" /></Link>

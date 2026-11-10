@@ -54,7 +54,7 @@ function Approvals() {
         actions={<button className="btn" onClick={next} disabled={list.length < 2}><Icon name="arrow" /> Следующая компания</button>} />
       <Async q={drafts} rows={6}>
         {() => !draft ? (
-          <div className="panel"><EmptyState icon="check" title="Очередь согласования пуста" text="Создайте черновик из карточки компании в базе — он появится здесь." action={<Link className="btn" href="/companies"><Icon name="building" /> Открыть базу компаний</Link>} /></div>
+          <div className="panel"><EmptyState level={2} icon="check" title="Очередь согласования пуста" text="Создайте черновик из карточки компании в базе — он появится здесь." action={<Link className="btn" href="/companies"><Icon name="building" /> Открыть базу компаний</Link>} /></div>
         ) : (
           <>
             <ol className="steps" aria-label="Этапы согласования" style={{ listStyle: "none", padding: 0 }}>
@@ -77,7 +77,7 @@ function Approvals() {
                     )}
                   </Async>
                 </Panel>
-                <Panel title="Карточка компании" subtitle="Факты, на которые опирается текст" action={<Link className="link-btn" href={`/companies/${draft.companyId}`}>Открыть <Icon name="arrow" /></Link>}>
+                <Panel title="Карточка компании" subtitle="Факты, на которые опирается текст" action={<Link className="link-btn" href={`/companies/${draft.companyId}`} aria-label={`Открыть карточку: ${draft.companyName}`}>Открыть <Icon name="arrow" /></Link>}>
                   <div className="panel-body">
                     <h3 style={{ fontSize: "0.9375rem" }}>{draft.companyName}</h3>
                     <p className="muted small" style={{ margin: "4px 0 12px" }}>{draft.city}</p>

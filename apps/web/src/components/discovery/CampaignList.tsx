@@ -32,7 +32,7 @@ export function CampaignList({ campaigns }: { campaigns: Campaign[] }) {
               <div className="row">
                 <StatusTag tone={TONE[k.status]}>{LABEL[k.status]}</StatusTag>
                 {k.status !== "done" && (
-                  <button className="btn btn-sm" disabled={busy === k.id} onClick={() => toggle(k)}>
+                  <button className="btn btn-sm" disabled={busy === k.id} onClick={() => toggle(k)} aria-label={`${k.status === "running" ? "Поставить на паузу" : "Продолжить"}: ${k.name}`}>
                     <Icon name={k.status === "running" ? "pause" : "play"} /> {k.status === "running" ? "Пауза" : "Продолжить"}
                   </button>
                 )}

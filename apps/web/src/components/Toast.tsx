@@ -19,8 +19,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={value}>
       {children}
-      <div className="toast-region" role="status" aria-live="polite">
-        {items.map((t) => (<div key={t.id} className={`toast ${t.kind === "error" ? "error" : ""}`}>{t.text}</div>))}
+      <div className="toast-region">
+        {/* Две постоянные live-области: информационные — вежливо, ошибки — сразу (assertive). */}
+        <div role="status" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {items.filter((t) => t.kind !== "error").map((t) => (<div key={t.id} className="toast">{t.text}</div>))}
+        </div>
+        <div aria-live="assertive" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {items.filter((t) => t.kind === "error").map((t) => (<div key={t.id} className="toast error">{t.text}</div>))}
+        </div>
       </div>
     </Ctx.Provider>
   );

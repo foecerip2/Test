@@ -9,8 +9,9 @@ export function SuppressionTab() {
       <div className="panel-body"><Notice>Запись необратима: адрес остаётся заблокированным, пока не появится новое законное основание. Удаления из этого списка нет намеренно.</Notice></div>
       <Async q={q} rows={3}>
         {(d) => d.length === 0 ? <EmptyState icon="shield" title="Список пуст" text="Сюда попадают отписки и отозванные согласия." /> : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Список подавления">
             <table className="data-table">
+              <caption className="sr-only">Список подавления</caption>
               <thead><tr><th scope="col">Канал</th><th scope="col">Адрес</th><th scope="col">Причина</th><th scope="col">Дата</th></tr></thead>
               <tbody>{d.map((e) => <tr key={e.id}><td>{e.channel}</td><td>{e.endpointMasked}</td><td>{e.reason}</td><td>{fmtDate(e.createdAt)}</td></tr>)}</tbody>
             </table>

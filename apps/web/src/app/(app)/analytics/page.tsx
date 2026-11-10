@@ -16,7 +16,7 @@ export default function AnalyticsPage() {
         actions={demo ? <DemoTag /> : undefined} />
       <Async q={q} rows={6}>
         {(s) => s.companiesTotal === 0 ? (
-          <Panel><EmptyState icon="chart" title="Данных для аналитики пока нет" text="Импортируйте компании или запустите кампанию — метрики появятся автоматически." /></Panel>
+          <Panel><EmptyState level={2} icon="chart" title="Данных для аналитики пока нет" text="Импортируйте компании или запустите кампанию — метрики появятся автоматически." /></Panel>
         ) : (
           <>
             <div className="metric-grid">

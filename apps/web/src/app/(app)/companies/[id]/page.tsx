@@ -69,7 +69,7 @@ function Body({ c }: { c: CompanyDetail }) {
         <div>
           <div className="eyebrow">Карточка компании</div>
           <h1>{c.name}</h1>
-          <p className="subtitle">{c.city} · {c.category}{c.website && <> · <a href={c.website} target="_blank" rel="noopener noreferrer nofollow">{c.domain}<Icon name="external" /></a></>}</p>
+          <p className="subtitle">{c.city} · {c.category}{c.website && <> · <a href={c.website} target="_blank" rel="noopener noreferrer nofollow">{c.domain}<Icon name="external" /><span className="sr-only"> (откроется в новой вкладке)</span></a></>}</p>
           <div className="row" style={{ marginTop: 10 }}>
             <ScoreBadge score={c.score} /><StatusTag status={c.display} />{c.demo && <DemoTag />}
           </div>
@@ -116,6 +116,6 @@ export default function CompanyPage() {
   const q = useQuery((a) => a.companies.get(id), [id]);
   useDocumentTitle(q.data?.name ?? "Карточка компании");
   if (q.loading && !q.data) return <LoadingSkeleton rows={8} />;
-  if (q.error && !q.data) return <><ErrorState error={q.error} onRetry={q.reload} /><p style={{ textAlign: "center" }}><Link href="/companies">← К базе компаний</Link></p></>;
+  if (q.error && !q.data) return <><ErrorState level={1} error={q.error} onRetry={q.reload} /><p style={{ textAlign: "center" }}><Link href="/companies">← К базе компаний</Link></p></>;
   return <Body c={q.data!} />;
 }

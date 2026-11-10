@@ -34,8 +34,8 @@ function Body({ s }: { s: Settings }) {
   return (
     <div className="stack">
       <Panel title="Режим AI" subtitle="AI — вспомогательный инструмент. Без него поиск, карточки, шаблоны и CRM работают полностью." pad>
-        <div className="choice-row" role="radiogroup" aria-label="Режим AI">
-          {MODES.map((m) => <button key={m.id} role="radio" aria-checked={s.aiMode === m.id} className="choice" onClick={() => setMode(m.id)}>{m.label}</button>)}
+        <div className="choice-row" role="group" aria-label="Режим AI">
+          {MODES.map((m) => <button key={m.id} type="button" aria-pressed={s.aiMode === m.id} className="choice" onClick={() => setMode(m.id)}>{m.label}</button>)}
         </div>
         <div className="spacer-top">
           <Notice tone="info" icon="lock">Вход через подписку на обычный чат (ChatGPT, Claude) недоступен: подписка не даёт API-доступа. Подключение появится, только когда провайдер официально поддержит OAuth для сторонних приложений.</Notice>
@@ -49,7 +49,7 @@ function Body({ s }: { s: Settings }) {
           <Field label="API-ключ" htmlFor="ai-key" hint="Ключ вносится в секреты сервера и никогда не вводится в браузер."><input id="ai-key" className="input" disabled placeholder="Не отображается" /></Field>
           <form onSubmit={saveBudget} noValidate>
             <div className="row" style={{ alignItems: "flex-start" }}>
-              <Field label="Бюджет в день, ₽" htmlFor="ai-day"><input id="ai-day" className="input" inputMode="decimal" value={daily} onChange={(e) => setDaily(e.target.value)} aria-invalid={!!err} style={{ maxWidth: 160 }} /></Field>
+              <Field label="Бюджет в день, ₽" htmlFor="ai-day"><input id="ai-day" className="input" inputMode="decimal" value={daily} onChange={(e) => setDaily(e.target.value)} aria-invalid={!!err} aria-describedby={err ? "ai-month-err" : undefined} style={{ maxWidth: 160 }} /></Field>
               <Field label="Бюджет в месяц, ₽" htmlFor="ai-month" error={err}><input id="ai-month" className="input" inputMode="decimal" value={monthly} onChange={(e) => setMonthly(e.target.value)} aria-invalid={!!err} style={{ maxWidth: 160 }} /></Field>
             </div>
             <p className="field-hint" style={{ marginBottom: 12 }}>После достижения лимита AI останавливается, система переходит на шаблоны.</p>

@@ -21,7 +21,7 @@ export default function SettingsPage() {
     <>
       <PageHeader eyebrow="Управление / интеграции" title="Настройки" subtitle="Секреты в интерфейсе не вводятся и не отображаются. Отправка по умолчанию запрещена." />
       <Tabs tabs={TABS} value={tab} onChange={setTab} label="Разделы настроек" />
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0}>
         {tab === "ai" && <AiTab />}
         {tab === "channels" && <ChannelsTab />}
         {tab === "security" && <SecurityTab />}

@@ -43,13 +43,13 @@ export default function InboxPage() {
         actions={<button className="btn" onClick={() => setTask(true)}><Icon name="plus" /> Создать задачу</button>} />
       <Panel>
         {convs.loading && !convs.data ? <LoadingSkeleton rows={6} /> : convs.error && !convs.data ? <ErrorState error={convs.error} onRetry={convs.reload} /> : !conv ? (
-          <EmptyState icon="chat" title="Диалогов пока нет" text="Ответы появятся здесь после подключения канала и первых разрешённых обращений." />
+          <EmptyState level={2} icon="chat" title="Диалогов пока нет" text="Ответы появятся здесь после подключения канала и первых разрешённых обращений." />
         ) : (
           <div className={s.split} data-view={showThread ? "thread" : "list"}>
             <div className={s.list}><ConversationList items={list} selectedId={conv.id} onSelect={open} /></div>
             <div className={s.thread}>
               <Async q={msgs} rows={4}>
-                {(m) => <ConversationThread ref={heading} conv={conv} messages={m} key={conv.id} onBack={() => setShowThread(false)}
+                {(m) => <ConversationThread ref={heading} conv={conv} messages={m} key={conv.id} onBack={() => { setShowThread(false); setTimeout(() => document.querySelector<HTMLElement>(`[data-conv="${conv.id}"]`)?.focus(), 0); }}
                   onClassify={(l) => (l === "unsubscribe" ? setConfirm(true) : classify(l))} onTask={() => setTask(true)} />}
               </Async>
             </div>

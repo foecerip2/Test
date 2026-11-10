@@ -25,15 +25,18 @@ export const PAGE_TITLES: Record<string, string> = {
   "/inbox": "Диалоги", "/pipeline": "Воронка продаж", "/analytics": "Аналитика", "/settings": "Настройки",
 };
 
-function useOutside(ref: React.RefObject<HTMLElement | null>, open: boolean, close: () => void) {
+/** Закрытие всплывающего блока: клик снаружи, Esc (с возвратом фокуса на кнопку), уход фокуса за пределы. */
+function useOutside(ref: React.RefObject<HTMLElement | null>, open: boolean, close: () => void, trigger: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) close(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { close(); trigger.current?.focus(); } };
+    const onFocus = (e: FocusEvent) => { if (ref.current && e.target instanceof Node && !ref.current.contains(e.target)) close(); };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
-  }, [ref, open, close]);
+    document.addEventListener("focusin", onFocus);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); document.removeEventListener("focusin", onFocus); };
+  }, [ref, open, close, trigger]);
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -47,6 +50,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const profRef = useRef<HTMLDivElement>(null);
   const menuBtn = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const bellBtn = useRef<HTMLButtonElement>(null);
+  const profBtn = useRef<HTMLButtonElement>(null);
+  const profMenu = useRef<HTMLDivElement>(null);
+  const drawerWasOpen = useRef(false);
+  const drawerReturnFocus = useRef(false);
 
   const me = useQuery((a) => a.auth.me());
   const summary = useQuery((a) => a.summary());
@@ -59,13 +67,32 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [me.loading, me.error, me.data, router]);
 
   useEffect(() => { setDrawer(false); setBell(false); setProfile(false); }, [path]);
-  useOutside(bellRef, bell, () => setBell(false));
-  useOutside(profRef, profile, () => setProfile(false));
+  useOutside(bellRef, bell, () => setBell(false), bellBtn);
+  useOutside(profRef, profile, () => setProfile(false), profBtn);
+  // Меню профиля: при открытии фокус на первый пункт.
+  useEffect(() => { if (profile) profMenu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, [profile]);
+  const closeDrawer = () => { drawerReturnFocus.current = true; setDrawer(false); };
+  // Мобильный ящик ведёт себя как модальный: фокус внутрь, Tab по кругу, Esc закрывает,
+  // остальная страница inert; после закрытия фокус возвращается на кнопку «Открыть меню».
   useEffect(() => {
-    if (!drawer) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setDrawer(false); menuBtn.current?.focus(); } };
+    if (!drawer) {
+      if (drawerWasOpen.current && drawerReturnFocus.current) menuBtn.current?.focus();
+      drawerWasOpen.current = false; drawerReturnFocus.current = false;
+      return;
+    }
+    drawerWasOpen.current = true;
+    const el = sidebarRef.current;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { drawerReturnFocus.current = true; setDrawer(false); return; }
+      if (e.key !== "Tab" || !el) return;
+      const f = Array.from(el.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)')).filter((x) => x.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0]!, last = f[f.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener("keydown", onKey);
-    sidebarRef.current?.querySelector<HTMLElement>("a")?.focus();
+    el?.querySelector<HTMLElement>(".nav a")?.focus();
     return () => document.removeEventListener("keydown", onKey);
   }, [drawer]);
 
@@ -86,7 +113,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <Link key={n.href} href={n.href} className="nav-link" aria-current={active ? "page" : undefined}>
         <Icon name={n.icon} /><span>{n.label}</span>
-        {c !== undefined && c > 0 && <span className={`nav-count ${n.count === "approvals" ? "hot" : ""}`} aria-label={`${c}`}>{c}</span>}
+        {c !== undefined && c > 0 && <span className={`nav-count ${n.count === "approvals" ? "hot" : ""}`} >{c}</span>}
       </Link>
     );
   };
@@ -95,9 +122,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <a className="skip-link" href="#content">Перейти к содержимому</a>
       <aside className={`sidebar ${drawer ? "open" : ""}`} id="sidebar" ref={sidebarRef} aria-label="Основная навигация">
-        <Link href="/overview" className="brand" aria-label="LeadHunter — на главную">
+        <button type="button" className="icon-btn drawer-close" aria-label="Закрыть меню" onClick={closeDrawer}><Icon name="close" /></button>
+        <Link href="/overview" className="brand">
           <div className="brand-mark" aria-hidden="true"><span /><span /><span /><span /></div>
-          <div><div className="brand-name">leadhunter<span className="brand-dot">.</span></div><div className="brand-sub">PRIVATE WORKSPACE</div></div>
+          <div><div className="brand-name">leadhunter<span className="brand-dot">.</span></div><div className="brand-sub" lang="en">PRIVATE WORKSPACE</div></div>
+          <span className="sr-only"> — на главную</span>
         </Link>
         <div className="nav-label" id="nav-main">Рабочее пространство</div>
         <nav className="nav" aria-labelledby="nav-main">{NAV_MAIN.map(link)}</nav>
@@ -112,19 +141,30 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mode-row"><Link href="/settings">Изменить в настройках</Link></div>
         </div>
         <div className="profile-wrap" ref={profRef}>
+          <button className="profile" ref={profBtn} aria-haspopup="menu" aria-expanded={profile} aria-controls={profile ? "profile-menu" : undefined} onClick={() => setProfile((v) => !v)}
+            onKeyDown={(e) => { if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !profile) { e.preventDefault(); setProfile(true); } }}>
+            <span className="avatar" aria-hidden="true">{me.data?.initials ?? "—"}</span>
+            <span><strong>{me.data?.name}</strong><small>{me.data?.email}</small><span className="sr-only">, меню профиля</span></span>
+          </button>
+          {/* Меню идёт после кнопки в DOM, чтобы порядок фокуса совпадал с логикой; визуально оно над кнопкой. */}
           {profile && (
-            <div className="menu up" role="menu">
-              <button role="menuitem" onClick={async () => { await getApi().auth.logout(); router.replace("/login"); }}><Icon name="logout" /> Выйти</button>
+            <div className="menu up" role="menu" id="profile-menu" aria-label="Профиль" ref={profMenu}
+              onKeyDown={(e) => {
+                const items = Array.from(profMenu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+                const i = items.indexOf(document.activeElement as HTMLElement);
+                if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+                else if (e.key === "Home") { e.preventDefault(); items[0]?.focus(); }
+                else if (e.key === "End") { e.preventDefault(); items[items.length - 1]?.focus(); }
+                else if (e.key === "Tab") setProfile(false);
+              }}>
+              <button role="menuitem" tabIndex={-1} onClick={async () => { await getApi().auth.logout(); router.replace("/login"); }}><Icon name="logout" /> Выйти</button>
             </div>
           )}
-          <button className="profile" aria-haspopup="menu" aria-expanded={profile} onClick={() => setProfile((v) => !v)}>
-            <span className="avatar">{me.data?.initials ?? "—"}</span>
-            <span><strong>{me.data?.name}</strong><small>{me.data?.email}</small></span>
-          </button>
         </div>
       </aside>
-      <div className={`overlay ${drawer ? "open" : ""}`} onClick={() => { setDrawer(false); menuBtn.current?.focus(); }} aria-hidden="true" />
-      <div className="main-area">
+      <div className={`overlay ${drawer ? "open" : ""}`} onClick={closeDrawer} aria-hidden="true" />
+      <div className="main-area" inert={drawer || undefined}>
         <header className="topbar">
           <div className="breadcrumb">
             <button className="icon-btn mobile-menu" ref={menuBtn} aria-label="Открыть меню" aria-expanded={drawer} aria-controls="sidebar" onClick={() => setDrawer(true)}><Icon name="menu" /></button>
@@ -133,11 +173,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="top-actions" ref={bellRef}>
             {mock && <span className="status-pill"><i /><span className="pill-long">Демо-данные · без отправки</span><span className="pill-short">Демо</span></span>}
-            <button className="icon-btn" aria-label={`Уведомления${urgent ? `: ${urgent}` : ""}`} aria-haspopup="true" aria-expanded={bell} onClick={() => setBell((v) => !v)}>
+            <button className="icon-btn" ref={bellBtn} aria-label={`Уведомления${urgent ? `: ${urgent}` : ""}`} aria-expanded={bell} aria-controls={bell ? "notif-panel" : undefined} onClick={() => setBell((v) => !v)}>
               <Icon name="bell" />{urgent > 0 && <span className="badge-dot">{urgent}</span>}
             </button>
             {bell && (
-              <div className="menu down" role="region" aria-label="Уведомления">
+              <div className="menu down" role="region" aria-label="Уведомления" id="notif-panel">
                 <Async q={summary} rows={3}>
                   {(d) => d.attention.length === 0
                     ? <div className="state" style={{ padding: 24 }}><p style={{ margin: 0 }}>Нет событий, требующих внимания</p></div>
