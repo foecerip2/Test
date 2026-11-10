@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><color android:color="@color/lh_canvas"/></item>
+    <item android:gravity="center" android:width="96dp" android:height="96dp">
+        <vector android:width="96dp" android:height="96dp" android:viewportWidth="108" android:viewportHeight="108">
+            <path android:fillColor="#116C57" android:pathData="M24,0 h60 a24,24 0 0 1 24,24 v60 a24,24 0 0 1 -24,24 h-60 a24,24 0 0 1 -24,-24 v-60 a24,24 0 0 1 24,-24 z"/>
+            <group android:rotation="-9" android:pivotX="54" android:pivotY="54">
+                <path android:fillColor="#E3F5E8" android:fillAlpha="1" android:pathData="M39.0,36.5 h9 a2.5,2.5 0 0 1 2.5,2.5 v9 a2.5,2.5 0 0 1 -2.5,2.5 h-9 a2.5,2.5 0 0 1 -2.5,-2.5 v-9 a2.5,2.5 0 0 1 2.5,-2.5 z"/>
+                <path android:fillColor="#E3F5E8" android:fillAlpha="0.45" android:pathData="M58.0,36.5 h9 a2.5,2.5 0 0 1 2.5,2.5 v9 a2.5,2.5 0 0 1 -2.5,2.5 h-9 a2.5,2.5 0 0 1 -2.5,-2.5 v-9 a2.5,2.5 0 0 1 2.5,-2.5 z"/>
+                <path android:fillColor="#E3F5E8" android:fillAlpha="0.65" android:pathData="M39.0,55.5 h9 a2.5,2.5 0 0 1 2.5,2.5 v9 a2.5,2.5 0 0 1 -2.5,2.5 h-9 a2.5,2.5 0 0 1 -2.5,-2.5 v-9 a2.5,2.5 0 0 1 2.5,-2.5 z"/>
+                <path android:fillColor="#E3F5E8" android:fillAlpha="1" android:pathData="M58.0,55.5 h9 a2.5,2.5 0 0 1 2.5,2.5 v9 a2.5,2.5 0 0 1 -2.5,2.5 h-9 a2.5,2.5 0 0 1 -2.5,-2.5 v-9 a2.5,2.5 0 0 1 2.5,-2.5 z"/>
+            </group>
+        </vector>
+    </item>
+</layer-list>
