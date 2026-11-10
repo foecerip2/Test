@@ -1,0 +1,4 @@
+# Шлюз включён: BASIC_HASH задан в /opt/leadhunter/.env
+basic_auth {
+	{$BASIC_USER} {$BASIC_HASH}
+}

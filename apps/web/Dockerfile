@@ -11,6 +11,10 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY apps/web apps/web
+# Режим авторизации «зашивается» в клиентский бандл при сборке. В Docker (прод) по умолчанию live;
+# обычный `pnpm build` (CI/e2e) без этого аргумента остаётся mock.
+ARG NEXT_PUBLIC_AUTH_MODE=live
+ENV NEXT_PUBLIC_AUTH_MODE=$NEXT_PUBLIC_AUTH_MODE
 ENV NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=1024
 RUN pnpm --filter web build
 
