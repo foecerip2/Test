@@ -57,6 +57,11 @@ check "новые compose/Caddyfile установлены" 'grep -q "new: true"
 check "deployed.env обновлён" '[[ "$(env_val "$S/deployed.env" API)" == "$NEW_API" && "$(env_val "$S/deployed.env" COMMIT)" == abc123 ]]'
 check "update.sh самообновился" 'grep -q NEW-UPDATER "$SM_ROOT/bin/update.sh"'
 check "веб-образ скачан по digest" 'log_has "pull -q $NEW_WEB"'
+echo "-- скрипты эксплуатации из релиза доставляются на сервер (если есть в пакете), без них обновление не ломается"
+setup; printf '#!/usr/bin/env bash\n# NEW-DRILL\n' > "$FAKE_BUNDLE/bootstrap/restore-drill.sh"; printf '#!/usr/bin/env bash\n# NEW-POSTCHECK\n' > "$FAKE_BUNDLE/bootstrap/post-reboot-check.sh"; run
+check "restore-drill.sh и post-reboot-check.sh установлены, исполняемые" '[[ "$RC" == 0 && "$(status)" == ok ]] && grep -q NEW-DRILL "$SM_ROOT/bin/restore-drill.sh" && grep -q NEW-POSTCHECK "$SM_ROOT/bin/post-reboot-check.sh" && [[ -x "$SM_ROOT/bin/restore-drill.sh" && -x "$SM_ROOT/bin/post-reboot-check.sh" ]]'
+setup; run
+check "релиз без этих скриптов: обновление проходит, лишнего не создаётся" '[[ "$RC" == 0 && "$(status)" == ok && ! -e "$SM_ROOT/bin/restore-drill.sh" ]]'
 echo "-- повторный запуск того же релиза: no-op"
 : > "$FAKE_LOG"; export FAKE_API_DIGEST="$NEW_API"; run
 check "ничего не делает" '[[ "$RC" == 0 ]] && ! log_has "compose"'

@@ -4,6 +4,7 @@
     python -m app.cli public-key --email you@example.com
     python -m app.cli check-host --email you@example.com --host 203.0.113.10 --username servermind
     python -m app.cli check-host ... --fingerprint SHA256:...      # второй шаг: только чтение, без записи в БД
+    python -m app.cli ledger-verify [--org-id UUID]                # сверка кошельков кредитов с проводками (код выхода 1 при расхождении)
 
 Пароль читается из getpass или переменной SM_PASSWORD (не передавайте пароль аргументом командной строки).
 """
@@ -16,6 +17,7 @@ import getpass
 import json
 import os
 import sys
+import uuid
 from dataclasses import asdict
 
 from pydantic import ValidationError
@@ -24,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import consteq, decrypt, encrypt, hash_password
-from app.db.models import AiKey, Membership, Organization, ServerCredential, User
+from app.db.models import AiKey, Membership, Organization, ServerCredential, User, Wallet
 from app.db.session import _factory
 from app.modules.ai import chatgpt, chatgpt_auth
 from app.modules.ai.providers import ProviderError
@@ -116,6 +118,19 @@ def cmd_check_host(a: argparse.Namespace) -> None:
     print(json.dumps(asdict(facts), ensure_ascii=False, indent=2))
 
 
+def cmd_ledger_verify(a: argparse.Namespace) -> None:
+    """Только чтение: кэш кошелька каждой организации должен сходиться с проводками (баланс, резервы, неотрицательность)."""
+    from app.modules.billing import ledger  # noqa: PLC0415 — локально: команда редкая
+
+    with _factory()() as db:
+        ids = [uuid.UUID(a.org_id)] if a.org_id else list(db.scalars(select(Wallet.organization_id)).all())
+        bad = {str(i): p for i in ids if (p := ledger.verify(db, i))}
+    if bad:
+        print(json.dumps({"ok": False, "problems": bad}, ensure_ascii=False, indent=2))
+        sys.exit(1)
+    print(f"OK: сверено кошельков — {len(ids)}, расхождений нет.")
+
+
 def cmd_chatgpt_import(a: argparse.Namespace) -> None:
     if sys.stdin.isatty():
         sys.exit("Передайте защищённый файл сессии через stdin по SSH.")
@@ -178,6 +193,9 @@ def main() -> None:
     g.add_argument("--email", required=True)
     g.add_argument("--model", required=True)
     g.set_defaults(fn=cmd_chatgpt_import)
+    v = sub.add_parser("ledger-verify", help="сверить кошельки кредитов с проводками (только чтение)")
+    v.add_argument("--org-id", default=None)
+    v.set_defaults(fn=cmd_ledger_verify)
     a = p.parse_args()
     a.fn(a)
 

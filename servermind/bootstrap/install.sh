@@ -22,7 +22,7 @@ MIN_RAM_KB="${MIN_RAM_KB:-3400000}"      # «4 ГБ» VPS показывает �
 MIN_DISK_MB="${MIN_DISK_MB:-8192}"       # целевой резерв свободного места (MD §0.1)
 
 IMAGE_REPO="${SM_DEFAULT_IMAGE_REPO-ghcr.io/foecerip2/servermind}"; CHANNEL="stable"; DOMAIN=""; HTTP_PORT=80; HTTPS_PORT=443
-GHCR_USER=""; GHCR_TOKEN_FILE=""; OWNER_EMAIL=""
+GHCR_USER=""; GHCR_TOKEN_FILE=""; OWNER_EMAIL=""; PLATFORM_ADMIN=""
 ASSUME_YES=0; DRY_RUN=0; FORCE=0
 LOW_MEMORY=0; SWAP_MB=0; AUTO_LOW=0
 MIN_RAM_KB_LOW="${MIN_RAM_KB_LOW:-1700000}"   # «2 ГБ» VPS показывает ≈1.9 ГБ
@@ -47,7 +47,9 @@ usage() {
   --https-port N           порт HTTPS (по умолчанию 443)
   --ghcr-user USER         пользователь GitHub для приватных образов
   --ghcr-token-file FILE   файл с токеном (scope read:packages); токен читается из файла, не из аргументов
-  --create-owner EMAIL     создать владельца (пароль вводится интерактивно)
+  --create-owner EMAIL     создать владельца (пароль вводится интерактивно); он же становится администратором платформы
+                           (выдача кредитов, подключение AI-моделей, флаги), если не задан --platform-admin
+  --platform-admin EMAIL   администратор платформы (PLATFORM_ADMIN_EMAILS в api.env); существующее значение не перезаписывается
   --dry-run                только показать план, ничего не менять
   --yes                    не спрашивать подтверждение
   --low-memory             облегчённый режим для VPS с ≈2 ГБ RAM: меньшие лимиты контейнеров и настройки PostgreSQL.
@@ -69,6 +71,7 @@ parse_args() {
       --ghcr-user) GHCR_USER="${2:?}"; shift 2 ;;
       --ghcr-token-file) GHCR_TOKEN_FILE="${2:?}"; shift 2 ;;
       --create-owner) OWNER_EMAIL="${2:?}"; shift 2 ;;
+      --platform-admin) PLATFORM_ADMIN="${2:?}"; shift 2 ;;
       --dry-run) DRY_RUN=1; shift ;;
       --yes) ASSUME_YES=1; shift ;;
       --low-memory) LOW_MEMORY=1; shift ;;
@@ -92,7 +95,8 @@ parse_args() {
     [[ -n "$GHCR_USER" ]] || die "--ghcr-token-file требует --ghcr-user"
     [[ -r "$GHCR_TOKEN_FILE" ]] || die "файл токена не читается: $GHCR_TOKEN_FILE"
   fi
-  if [[ -n "$OWNER_EMAIL" ]]; then [[ "$OWNER_EMAIL" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]{2,}$ ]] || die "--create-owner: некорректный email"; fi
+  if [[ -n "$OWNER_EMAIL" ]]; then [[ "$OWNER_EMAIL" =~ ^[^[:space:]@\"\\]+@[^[:space:]@\"\\]+\.[^[:space:]@\"\\]{2,}$ ]] || die "--create-owner: некорректный email"; fi
+  if [[ -n "$PLATFORM_ADMIN" ]]; then [[ "$PLATFORM_ADMIN" =~ ^[^[:space:]@\"\\]+@[^[:space:]@\"\\]+\.[^[:space:]@\"\\]{2,}$ ]] || die "--platform-admin: некорректный email"; fi
   return 0
 }
 
@@ -166,6 +170,7 @@ print_plan() {
 Docker:           $(command -v "$DOCKER" >/dev/null 2>&1 && echo "уже установлен — используется как есть" || echo "будет установлен из официального репозитория Docker (apt)")
 Режим памяти:     $( (( AUTO_LOW )) && echo "(выбран автоматически) ")$( (( LOW_MEMORY )) && echo "ОБЛЕГЧЁННЫЙ (лимиты: PostgreSQL 320m, API 256m, web 224m, Caddy 48m; запас мал, замеров на 2 ГБ нет)" || echo "обычный (рассчитан на 4 ГБ)")
 Swap:             $( if (( SWAP_MB > 0 )); then echo "будет создан файл $SWAPFILE ${SWAP_MB} МБ (если swap ещё не подключён) и добавлен в $FSTAB"; else echo "не изменяется"; fi)
+Администратор:    $( [[ -n "${PLATFORM_ADMIN:-$OWNER_EMAIL}" ]] && echo "${PLATFORM_ADMIN:-$OWNER_EMAIL} (PLATFORM_ADMIN_EMAILS в api.env, если там ещё не задано)" || echo "не назначается (задайте --platform-admin или --create-owner)")
 Автообновление:   systemd timer servermind-update.timer (раз в минуту; бэкап БД → миграции → smoke → откат при сбое)
 
 Будет изменено:   $SM_ROOT, ${SYSTEMD_DIR}/servermind-update.{service,timer}$(command -v "$DOCKER" >/dev/null 2>&1 || echo ", apt-репозиторий и пакеты Docker")
@@ -271,6 +276,19 @@ setup_swap() {
   if (( DRY_RUN )); then echo "[dry-run] echo '$SWAPFILE none swap sw 0 0' >> $FSTAB"; else echo "$SWAPFILE none swap sw 0 0" >> "$FSTAB"; fi
 }
 
+# Администратор платформы (выдача кредитов, модели, флаги). Существующее значение в api.env НЕ перезаписывается.
+set_platform_admin() {
+  local email="${PLATFORM_ADMIN:-$OWNER_EMAIL}" f="$SM_ROOT/env/api.env"
+  [[ -n "$email" ]] || return 0
+  if grep -q '^PLATFORM_ADMIN_EMAILS=' "$f" 2>/dev/null; then
+    log "PLATFORM_ADMIN_EMAILS уже задан в api.env — не меняю"
+    return 0
+  fi
+  printf 'PLATFORM_ADMIN_EMAILS=["%s"]\n' "$email" >> "$f"
+  chmod 600 "$f"
+  log "администратор платформы: $email"
+}
+
 write_compose_env() {
   local f="$SM_ROOT/compose/.env" site=":80"
   [[ -n "$DOMAIN" ]] && site="$DOMAIN"
@@ -294,6 +312,10 @@ install_files() {
   install -m 0644 "$STAGE/infra/compose/docker-compose.yml" "$SM_ROOT/compose/docker-compose.yml"
   install -m 0644 "$STAGE/infra/caddy/Caddyfile" "$SM_ROOT/compose/Caddyfile"
   install -m 0755 "$STAGE/bootstrap/update.sh" "$SM_ROOT/bin/update.sh"
+  local helper
+  for helper in restore-drill.sh post-reboot-check.sh; do
+    [[ -f "$STAGE/bootstrap/$helper" ]] && install -m 0755 "$STAGE/bootstrap/$helper" "$SM_ROOT/bin/$helper"
+  done
   printf 'SM_IMAGE_REPO=%s\nSM_CHANNEL=%s\n' "$IMAGE_REPO" "$CHANNEL" > "$SM_ROOT/state/config"
   install -m 0644 "$STAGE/bootstrap/systemd/servermind-update.service" "$SYSTEMD_DIR/servermind-update.service"
   install -m 0644 "$STAGE/bootstrap/systemd/servermind-update.timer" "$SYSTEMD_DIR/servermind-update.timer"
@@ -363,6 +385,7 @@ main() {
   # shellcheck disable=SC1091
   source "$STAGE/bootstrap/update.sh"   # env_set/dc/wait_smoke
   generate_env
+  set_platform_admin
   install_files
   write_compose_env
   first_deploy

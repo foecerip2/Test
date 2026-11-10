@@ -172,6 +172,22 @@ setup; mkstubs; : > "$T/swaps"; : > "$T/fstab"
 PATH="$T/bin:$PATH" SWAPS="$T/swaps" FSTAB="$T/fstab" SWAPFILE="$T/swapfile" inst "${REPO[@]}" --dry-run --swap-size 2048
 check "dry-run со swap: ничего не создано, fstab пуст, план упоминает файл" '[[ "$RC" == 0 ]] && [[ ! -e "$T/swap.log" && ! -s "$T/fstab" ]] && grep -q "будет создан файл" "$T/out.log"'
 
+echo "== 9. администратор платформы (PLATFORM_ADMIN_EMAILS)"
+setup; inst "${REPO[@]}" --yes --create-owner boss@example.com
+check "--create-owner назначает администратора платформы" '[[ "$RC" == 0 ]] && grep -qx '"'"'PLATFORM_ADMIN_EMAILS=\["boss@example.com"\]'"'"' "$SM_ROOT/env/api.env" && [[ "$(stat -c %a "$SM_ROOT/env/api.env")" == 600 ]]'
+setup; inst "${REPO[@]}" --yes --create-owner boss@example.com --platform-admin root@example.com
+check "--platform-admin важнее --create-owner" 'grep -qx '"'"'PLATFORM_ADMIN_EMAILS=\["root@example.com"\]'"'"' "$SM_ROOT/env/api.env"'
+inst "${REPO[@]}" --yes --platform-admin another@example.com
+check "повторный запуск не перезаписывает выбор владельца" '[[ "$(grep -c "^PLATFORM_ADMIN_EMAILS=" "$SM_ROOT/env/api.env")" == 1 ]] && grep -q "root@example.com" "$SM_ROOT/env/api.env" && grep -q "уже задан" "$T/out.log"'
+setup; inst "${REPO[@]}" --yes
+check "без флагов администратор не назначается" '[[ "$RC" == 0 ]] && ! grep -q "^PLATFORM_ADMIN_EMAILS=" "$SM_ROOT/env/api.env"'
+setup; inst "${REPO[@]}" --dry-run --platform-admin a@example.com
+check "dry-run показывает администратора и ничего не пишет" '[[ "$RC" == 0 ]] && grep -q "Администратор:    a@example.com" "$T/out.log" && [[ ! -e "$SM_ROOT/env/api.env" ]]'
+for bad in 'x"y@example.com' 'a b@example.com' 'no-at.example.com' 'a@b'; do
+  setup; inst "${REPO[@]}" --dry-run --platform-admin "$bad"
+  check "некорректный email администратора отвергается: $bad" '[[ "$RC" != 0 ]] && grep -q "platform-admin" "$T/out.log"'
+done
+
 echo
 echo "install.sh: пройдено $PASS, провалено $FAILN"
 [[ "$FAILN" == 0 ]]
