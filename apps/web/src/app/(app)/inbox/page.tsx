@@ -25,8 +25,10 @@ export default function InboxPage() {
   const conv = list.find((c) => c.id === selected) ?? list[0] ?? null;
   const msgs = useQuery(async (a) => (conv ? a.conversations.messages(conv.id) : []), [conv?.id]);
 
-  useEffect(() => { if (conv?.unread && showThread) getApi().conversations.markRead(conv.id); }, [conv?.id, conv?.unread, showThread]);
-  useEffect(() => { if (conv && window.matchMedia("(min-width: 701px)").matches && conv.unread) getApi().conversations.markRead(conv.id); }, [conv?.id, conv?.unread, conv]);
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 701px)").matches;
+    if (conv?.unread && (showThread || desktop)) getApi().conversations.markRead(conv.id);
+  }, [conv?.id, conv?.unread, showThread]);
 
   const open = (id: string) => { setSelected(id); setShowThread(true); setTimeout(() => heading.current?.focus(), 0); };
   async function classify(label: ConversationStage) {
