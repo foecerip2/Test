@@ -21,10 +21,10 @@ REQUIRE_UID="${REQUIRE_UID:-0}"   # переопределяется тольк�
 MIN_RAM_KB="${MIN_RAM_KB:-3400000}"      # «4 ГБ» VPS показывает ≈3.8 ГБ
 MIN_DISK_MB="${MIN_DISK_MB:-8192}"       # целевой резерв свободного места (MD §0.1)
 
-IMAGE_REPO=""; CHANNEL="stable"; DOMAIN=""; HTTP_PORT=80; HTTPS_PORT=443
+IMAGE_REPO="${SM_DEFAULT_IMAGE_REPO-ghcr.io/foecerip2/servermind}"; CHANNEL="stable"; DOMAIN=""; HTTP_PORT=80; HTTPS_PORT=443
 GHCR_USER=""; GHCR_TOKEN_FILE=""; OWNER_EMAIL=""
 ASSUME_YES=0; DRY_RUN=0; FORCE=0
-LOW_MEMORY=0; SWAP_MB=0
+LOW_MEMORY=0; SWAP_MB=0; AUTO_LOW=0
 MIN_RAM_KB_LOW="${MIN_RAM_KB_LOW:-1700000}"   # «2 ГБ» VPS показывает ≈1.9 ГБ
 SWAPFILE="${SWAPFILE:-/swapfile}"; SWAPS="${SWAPS:-/proc/swaps}"; FSTAB="${FSTAB:-/etc/fstab}"
 
@@ -39,7 +39,7 @@ usage() {
   cat <<'EOF'
 Использование: install.sh --image-repo ghcr.io/<owner>/servermind [опции]
 
-  --image-repo REPO        префикс образов в GHCR (образы: REPO-api, REPO-web)   [обязательно]
+  --image-repo REPO        префикс образов в GHCR (образы: REPO-api, REPO-web); по умолчанию ghcr.io/foecerip2/servermind
   --channel TAG            канал релизов (по умолчанию stable)
   --domain NAME            домен для автоматического HTTPS (нужна A-запись и свободные порты 80/443);
                            без домена — HTTP на порту :80 (только для теста, cookie без Secure)
@@ -115,6 +115,12 @@ preflight_resources() {
   free_mb="$(df -Pm "$dir" | awk 'NR==2 {print $4}')"
   log "ресурсы: RAM $((ram_kb / 1024)) МБ, свободно на диске $free_mb МБ"
   local need_kb="$MIN_RAM_KB" need_txt="≈4 ГБ"
+  # Авто: памяти меньше нормы, но достаточно для облегчённого режима → включаем его (и swap, если его нет) — видно в плане, требует подтверждения
+  if (( ! LOW_MEMORY && ! FORCE && ram_kb < MIN_RAM_KB && ram_kb >= MIN_RAM_KB_LOW )); then
+    LOW_MEMORY=1; AUTO_LOW=1
+    warn "RAM $((ram_kb / 1024)) МБ < 4 ГБ: автоматически включён облегчённый режим (--low-memory)"
+    if (( SWAP_MB == 0 )) && [[ "$(awk 'NR>1' "$SWAPS" 2>/dev/null | wc -l)" == 0 ]]; then SWAP_MB=2048; warn "swap не подключён: в план добавлено создание swap-файла 2048 МБ"; fi
+  fi
   if (( LOW_MEMORY )); then need_kb="$MIN_RAM_KB_LOW"; need_txt="≈2 ГБ (облегчённый режим)"; fi
   if (( ram_kb < need_kb )); then
     if (( FORCE )); then warn "мало RAM (--force)"
@@ -158,7 +164,7 @@ print_plan() {
 Каталог:          $SM_ROOT  (env/ — секреты 600, compose/, state/, backups/)
 Доступ:           $mode
 Docker:           $(command -v "$DOCKER" >/dev/null 2>&1 && echo "уже установлен — используется как есть" || echo "будет установлен из официального репозитория Docker (apt)")
-Режим памяти:     $( (( LOW_MEMORY )) && echo "ОБЛЕГЧЁННЫЙ (лимиты: PostgreSQL 320m, API 256m, web 224m, Caddy 48m; запас мал, замеров на 2 ГБ нет)" || echo "обычный (рассчитан на 4 ГБ)")
+Режим памяти:     $( (( AUTO_LOW )) && echo "(выбран автоматически) ")$( (( LOW_MEMORY )) && echo "ОБЛЕГЧЁННЫЙ (лимиты: PostgreSQL 320m, API 256m, web 224m, Caddy 48m; запас мал, замеров на 2 ГБ нет)" || echo "обычный (рассчитан на 4 ГБ)")
 Swap:             $( if (( SWAP_MB > 0 )); then echo "будет создан файл $SWAPFILE ${SWAP_MB} МБ (если swap ещё не подключён) и добавлен в $FSTAB"; else echo "не изменяется"; fi)
 Автообновление:   systemd timer servermind-update.timer (раз в минуту; бэкап БД → миграции → smoke → откат при сбое)
 
@@ -211,7 +217,17 @@ ghcr_login() {
 fetch_bundle() {  # заполняет STAGE, API_REF, WEB_REF, COMMIT
   STAGE="$(mktemp -d)"
   log "скачиваю релиз $IMAGE_REPO-api:$CHANNEL"
-  "$DOCKER" pull -q "$IMAGE_REPO-api:$CHANNEL" >/dev/null || die "не удалось скачать образ. Проверьте имя, что CI уже опубликовал релиз, и доступ (приватный пакет → --ghcr-user/--ghcr-token-file)"
+  if ! "$DOCKER" pull -q "$IMAGE_REPO-api:$CHANNEL" >/dev/null 2>&1; then
+    # Образ приватный (или ещё не опубликован): при интерактивном запуске просим токен один раз, без записи в аргументы/историю
+    if [[ -z "$GHCR_TOKEN_FILE" && -t 0 ]]; then
+      local owner tok; owner="${IMAGE_REPO#ghcr.io/}"; owner="${owner%%/*}"
+      warn "образ недоступен без авторизации. Введите GitHub token (classic, scope read:packages) для пользователя $owner или Enter, чтобы отменить"
+      read -r -s -p "token: " tok; echo
+      [[ -n "$tok" ]] || die "отменено. Либо сделайте пакеты публичными (GitHub → Packages → Package settings → Change visibility), либо повторите с токеном"
+      printf '%s' "$tok" | "$DOCKER" login ghcr.io -u "$owner" --password-stdin >/dev/null || die "GHCR отклонил токен"
+    fi
+    "$DOCKER" pull -q "$IMAGE_REPO-api:$CHANNEL" >/dev/null || die "не удалось скачать образ. Проверьте имя, что CI уже опубликовал релиз, и доступ (приватный пакет → --ghcr-user/--ghcr-token-file)"
+  fi
   API_REF="$("$DOCKER" image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REPO-api:$CHANNEL")"
   [[ "$API_REF" == *@sha256:* ]] || die "не удалось определить digest образа"
   local cid; cid="$("$DOCKER" create "$API_REF")"

@@ -168,6 +168,7 @@ jobs:
           file: servermind/apps/web/Dockerfile
           push: true
           tags: ${{ steps.names.outputs.prefix }}-web:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: API_BASE_URL=http://api:8000
           cache-from: type=gha,scope=web
       - id: api
@@ -177,6 +178,7 @@ jobs:
           file: servermind/apps/api/Dockerfile
           push: true
           tags: ${{ steps.names.outputs.prefix }}-api:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: |
             WEB_IMAGE=${{ steps.names.outputs.prefix }}-web@${{ steps.web.outputs.digest }}
             GIT_SHA=${{ github.sha }}

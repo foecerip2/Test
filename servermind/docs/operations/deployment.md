@@ -16,7 +16,15 @@ VPS: servermind-update.timer → новый digest? → бэкап БД → ми
 3. **Защита выката (рекомендуется):** Settings → Environments → `production` → *Required reviewers* (вы). Тогда `stable` сдвинется — и VPS обновится — только после вашего Approve. Settings → Branches → защита `main` (обязательные проверки CI, запрет прямого push).
 4. Если проект вынесен в отдельный репозиторий (`servermind/` в корне) — уберите префикс `servermind/` в путях workflow.
 
-## 2. Установка на VPS
+## 2. Установка на VPS — быстрый путь
+Репозиторий публичный, значения по умолчанию заданы в установщике (`ghcr.io/foecerip2/servermind`), память определяется автоматически (при 1,7–3,4 ГБ RAM включаются `--low-memory` и swap 2 ГБ — это видно в плане, подтверждение `y` обязательно):
+```bash
+curl -fsSL -o install.sh https://raw.githubusercontent.com/foecerip2/Test/main/servermind/bootstrap/install.sh
+sudo bash install.sh --domain ai.vaylonet.ru --create-owner you@example.com
+```
+Если образ приватный, установщик сам спросит GitHub token (scope `read:packages`) вместо падения. Чтобы токен не был нужен вообще: GitHub → Packages → `servermind-api` и `servermind-web` → Package settings → Change visibility → Public (один раз; через CI это сделать нельзя).
+
+## 2a. Установка на VPS — подробно
 Подключитесь к **чистому** Ubuntu 24.04 (1–2 vCPU / 4 ГБ / ≥ 8 ГБ свободно). Скачайте установщик, **прочитайте его**, посмотрите план и только потом запускайте:
 ```bash
 curl -fsSL -o install.sh https://raw.githubusercontent.com/<owner>/<repo>/main/servermind/bootstrap/install.sh

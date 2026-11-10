@@ -46,7 +46,7 @@ REPO=(--image-repo ghcr.io/o/servermind)
 
 echo "== 1. разбор и проверка аргументов"
 setup
-inst; check "без --image-repo → ошибка" '[[ "$RC" != 0 ]] && grep -q "image-repo" "$T/out.log"'
+SM_DEFAULT_IMAGE_REPO="" inst; check "без --image-repo (и без значения по умолчанию) → ошибка" '[[ "$RC" != 0 ]] && grep -q "image-repo" "$T/out.log"'
 inst --image-repo "GHCR.io/Bad Name" --dry-run; check "недопустимые символы в --image-repo" '[[ "$RC" != 0 ]]'
 inst "${REPO[@]}" --domain app.example.com --http-port 8080 --dry-run; check "HTTPS-домен несовместим с нестандартными портами" '[[ "$RC" != 0 ]] && grep -q "80/443" "$T/out.log"'
 inst "${REPO[@]}" --domain "bad domain" --dry-run; check "некорректный домен" '[[ "$RC" != 0 ]]'
@@ -146,8 +146,8 @@ check "docker login с --password-stdin; токена нет в аргумент
 
 echo "== 8. облегчённый режим (--low-memory) и swap"
 setup; printf 'MemTotal:        2015000 kB\n' > "$MEMINFO"
-inst "${REPO[@]}" --dry-run; check "2 ГБ без --low-memory → отказ с подсказкой про --low-memory" '[[ "$RC" != 0 ]] && grep -q "low-memory" "$T/out.log"'
-inst "${REPO[@]}" --dry-run --low-memory; check "2 ГБ с --low-memory → план показан, режим назван" '[[ "$RC" == 0 ]] && grep -q "ОБЛЕГЧЁННЫЙ" "$T/out.log" && grep -q "Swap:             не изменяется" "$T/out.log"'
+: > "$T/swaps"; SWAPS="$T/swaps" inst "${REPO[@]}" --dry-run; check "2 ГБ без флагов → облегчённый режим и swap включены автоматически, в плане видно" '[[ "$RC" == 0 ]] && grep -q "выбран автоматически" "$T/out.log" && grep -q "будет создан файл" "$T/out.log"'
+SWAPS="$T/swaps" inst "${REPO[@]}" --dry-run --low-memory; check "2 ГБ с --low-memory → план показан, режим назван" '[[ "$RC" == 0 ]] && grep -q "ОБЛЕГЧЁННЫЙ" "$T/out.log" && grep -q "Swap:             не изменяется" "$T/out.log"'
 setup; printf 'MemTotal:        1000000 kB\n' > "$MEMINFO"; inst "${REPO[@]}" --dry-run --low-memory
 check "1 ГБ отказ даже в облегчённом режиме" '[[ "$RC" != 0 ]] && grep -q "даже для облегчённого" "$T/out.log"'
 setup; inst "${REPO[@]}" --dry-run --swap-size abc; check "--swap-size: не число → ошибка" '[[ "$RC" != 0 ]]'
