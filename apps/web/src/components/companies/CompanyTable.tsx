@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Icon } from "../Icon";
-import { DemoTag, ScoreBadge, StatusTag } from "../ui";
+import { ScoreBadge, StatusTag } from "../ui";
 import type { Company } from "@/lib/api";
 
 export type SortKey = "score" | "name" | "updated";
@@ -25,7 +25,7 @@ export function CompanyTable({ items, caption, threshold = 75, sort, onSort }: {
 }) {
   return (
     <div className="table-wrap" tabIndex={0} role="region" aria-label={caption}>
-      <table className="data-table">
+      <table className="data-table cards">
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr>
@@ -41,7 +41,7 @@ export function CompanyTable({ items, caption, threshold = 75, sort, onSort }: {
             <tr key={c.id}>
               <td>
                 <Link href={`/companies/${c.id}`} className="cell-name" style={{ textDecoration: "none", color: "var(--ink)" }}>{c.name}</Link>
-                <span className="cell-sub">{c.category}{c.demo && <> · <DemoTag /></>}</span>
+                <span className="cell-sub">{c.category}</span>
               </td>
               <td>{c.city}</td>
               <td><ScoreBadge score={c.score} threshold={threshold} /></td>

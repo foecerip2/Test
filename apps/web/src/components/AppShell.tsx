@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
-import { Async } from "./ui";
+import { Async, ErrorState } from "./ui";
 import { getApi } from "@/lib/api";
 import { useQuery } from "@/lib/hooks";
 
@@ -53,10 +53,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const settings = useQuery((a) => a.settings.get());
 
   useEffect(() => {
-    if (me.loading) return;
+    if (me.loading || me.error) return;
     if (me.data) setAuthed("yes");
     else router.replace("/login");
-  }, [me.loading, me.data, router]);
+  }, [me.loading, me.error, me.data, router]);
 
   useEffect(() => { setDrawer(false); setBell(false); setProfile(false); }, [path]);
   useOutside(bellRef, bell, () => setBell(false));
@@ -69,6 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [drawer]);
 
+  if (me.error && !me.data) return <ErrorState error={me.error} onRetry={me.reload} />;
   if (authed !== "yes") return <div className="state" role="status"><p>Загрузка…</p></div>;
 
   const s = summary.data;
@@ -127,11 +128,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <div className="breadcrumb">
             <button className="icon-btn mobile-menu" ref={menuBtn} aria-label="Открыть меню" aria-expanded={drawer} aria-controls="sidebar" onClick={() => setDrawer(true)}><Icon name="menu" /></button>
-            <span className="crumb-muted">Рабочее пространство</span><span className="slash" aria-hidden="true">/</span>
+            <span className="crumb-muted crumb-root">Рабочее пространство</span><span className="slash crumb-root" aria-hidden="true">/</span>
             {isDetail ? <><Link href="/companies" className="crumb-muted" style={{ textDecoration: "none" }}>База компаний</Link><span className="slash" aria-hidden="true">/</span><strong>Карточка</strong></> : <strong>{title}</strong>}
           </div>
           <div className="top-actions" ref={bellRef}>
-            {mock && <span className="status-pill"><i /><span><span className="label-long">Демо-данные · </span>без отправки</span></span>}
+            {mock && <span className="status-pill"><i /><span className="pill-long">Демо-данные · без отправки</span><span className="pill-short">Демо</span></span>}
             <button className="icon-btn" aria-label={`Уведомления${urgent ? `: ${urgent}` : ""}`} aria-haspopup="true" aria-expanded={bell} onClick={() => setBell((v) => !v)}>
               <Icon name="bell" />{urgent > 0 && <span className="badge-dot">{urgent}</span>}
             </button>

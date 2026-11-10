@@ -53,6 +53,9 @@ export default function CompaniesPage() {
         <div className="input-search"><Icon name="search" />
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Компания, город, специализация…" aria-label="Поиск по компаниям" />
         </div>
+        <select className="select only-mobile" aria-label="Сортировка" value={`${sort.key}:${sort.dir}`} onChange={(e) => { const [k, d] = e.target.value.split(":"); setSort({ key: k as SortKey, dir: d as "asc" | "desc" }); }}>
+          <option value="score:desc">Сначала высокая оценка</option><option value="score:asc">Сначала низкая оценка</option><option value="name:asc">По названию А–Я</option><option value="updated:desc">Недавно обновлённые</option>
+        </select>
         <select className="select" aria-label="Город" value={city} onChange={(e) => { setCity(e.target.value); setLimit(PAGE); }}>
           <option value="">Все города</option>{q.data?.cities.map((c) => <option key={c}>{c}</option>)}
         </select>
