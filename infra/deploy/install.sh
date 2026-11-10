@@ -13,7 +13,7 @@
 # Секретов, токенов и входящего SSH для деплоя не нужно.
 set -euo pipefail
 
-REPO=""; REF="main"; DOMAIN="ai.vaylonet.ru"; HARDEN=0; SKIP_FIRST=0
+REPO=""; REF="main"; DOMAIN="ai.vaylonet.ru"; HARDEN=0; SKIP_FIRST=0; NEW_PASS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:-}"; shift 2 ;;
@@ -21,6 +21,7 @@ while [ $# -gt 0 ]; do
     --domain) DOMAIN="${2:-}"; shift 2 ;;
     --harden-ssh) HARDEN=1; shift ;;
     --no-first-run) SKIP_FIRST=1; shift ;;
+    --new-password) NEW_PASS=1; shift ;;
     *) echo "Неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
 done
@@ -68,8 +69,10 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if [ -z "$(swapon --show --noheadings 2>/dev/null)" ]; then
-  say "Swap 2 ГБ (для сборки на сервере с 4 ГБ RAM)"
-  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
+  MEM_MB="$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"
+  SWAP_GB=2; [ "$MEM_MB" -lt 3000 ] && SWAP_GB=3
+  say "Swap ${SWAP_GB} ГБ (сборка сайта выполняется на сервере; RAM: ${MEM_MB} МБ)"
+  fallocate -l "${SWAP_GB}G" /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
@@ -78,6 +81,7 @@ install -d -m 0755 /opt/leadhunter
 printf 'REPO=%s\nBRANCH=main\n' "$REPO" > /opt/leadhunter/lh.conf
 ENVF=/opt/leadhunter/.env
 [ -f "$ENVF" ] || { install -m 0600 /dev/null "$ENVF"; printf 'DOMAIN=%s\nBASIC_USER=owner\nBASIC_HASH=\nWEB_IMAGE=\n' "$DOMAIN" > "$ENVF"; }
+[ "$NEW_PASS" -eq 1 ] && sed -i 's|^BASIC_HASH=.*|BASIC_HASH=|' "$ENVF"
 if ! grep -qE '^BASIC_HASH=.+' "$ENVF"; then
   PASS="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)"
   HASH="$(docker run --rm caddy:2.8-alpine caddy hash-password --plaintext "$PASS")"
@@ -124,21 +128,29 @@ systemctl daemon-reload
 systemctl enable --now lh-update.timer >/dev/null
 
 say "Firewall, fail2ban, автообновления безопасности"
-SSHPORT="$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')"; SSHPORT="${SSHPORT:-22}"
+SSHPORT="$( (sshd -T 2>/dev/null || true) | awk '/^port /{print $2; exit}')"; SSHPORT="${SSHPORT:-22}"
+# Чтобы не потерять доступ (SSH, консоль провайдера), все уже слушающие внешние TCP-порты остаются открытыми.
+KEEP="$(ss -ltnH 2>/dev/null | awk '{a=$4; n=split(a,x,":"); p=x[n]; if (a !~ /^127\./ && a !~ /^\[::1\]/) print p}' | sort -un | grep -vE '^(80|443)$' || true)"
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
-ufw limit "${SSHPORT}/tcp" >/dev/null
+for p in $KEEP; do
+  if [ "$p" = "$SSHPORT" ]; then ufw limit "${p}/tcp" >/dev/null; else ufw allow "${p}/tcp" >/dev/null; fi
+done
+echo "Оставлены открытыми существующие порты: ${KEEP:-нет} (плюс 80 и 443 для сайта)"
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
 ufw allow 443/udp >/dev/null
 ufw --force enable >/dev/null
-printf '[sshd]\nenabled = true\nmaxretry = 5\nfindtime = 10m\nbantime = 1h\n' > /etc/fail2ban/jail.d/leadhunter.local
-systemctl enable --now fail2ban >/dev/null 2>&1 || true
-systemctl restart fail2ban || true
+if command -v sshd >/dev/null 2>&1; then
+  printf '[sshd]\nenabled = true\nmaxretry = 5\nfindtime = 10m\nbantime = 1h\n' > /etc/fail2ban/jail.d/leadhunter.local
+  systemctl enable --now fail2ban >/dev/null 2>&1 || true
+  systemctl restart fail2ban || true
+fi
 dpkg-reconfigure -f noninteractive unattended-upgrades >/dev/null 2>&1 || true
 
 if [ "$HARDEN" -eq 1 ]; then
   say "Отключение входа по паролю"
+  command -v sshd >/dev/null 2>&1 || die "На этом сервере нет SSH-сервера (вход через консоль провайдера) — отключать пароль нечего."
   [ -s /root/.ssh/authorized_keys ] || die "У root нет SSH-ключа — вы потеряете доступ. Сначала добавьте свой ключ."
   install -d -m 0755 /etc/ssh/sshd_config.d
   printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/99-leadhunter.conf

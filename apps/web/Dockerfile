@@ -10,7 +10,7 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY apps/web apps/web
-ENV NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=1536
+ENV NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=1024
 RUN pnpm --filter web build
 
 FROM node:22-alpine AS run
