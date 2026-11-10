@@ -36,7 +36,7 @@ export function JobQueue({ jobs }: { jobs: Job[] }) {
               </div>
               <div className="row">
                 <StatusTag tone={TONE[j.state]}>{LABEL[j.state]}</StatusTag>
-                {(j.state === "queued" || j.state === "running") && <button className="btn btn-sm" onClick={() => setTarget(j)} aria-label={`Отменить задачу: ${j.label}`}>Отменить</button>}
+                {(j.state === "queued" || j.state === "running") && <button className="btn btn-sm" onClick={() => setTarget(j)}>Отменить<span className="sr-only"> задачу: {j.label}</span></button>}
               </div>
             </li>
           ))}

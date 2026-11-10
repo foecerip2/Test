@@ -20,6 +20,7 @@ export default function InboxPage() {
   const [task, setTask] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
+  const focusHeading = useRef(false);
 
   const list = convs.data ?? [];
   const conv = list.find((c) => c.id === selected) ?? list[0] ?? null;
@@ -30,7 +31,15 @@ export default function InboxPage() {
     if (conv?.unread && (showThread || desktop)) getApi().conversations.markRead(conv.id);
   }, [conv?.id, conv?.unread, showThread]);
 
-  const open = (id: string) => { setSelected(id); setShowThread(true); setTimeout(() => heading.current?.focus(), 0); };
+  const open = (id: string) => {
+    setShowThread(true);
+    if (id === conv?.id) { setTimeout(() => heading.current?.focus(), 0); return; }
+    setSelected(id); focusHeading.current = true;
+  };
+  // Фокус на заголовок диалога, когда загрузятся сообщения нового диалога (до этого показывается скелетон).
+  useEffect(() => {
+    if (focusHeading.current && msgs.data && !msgs.loading && heading.current) { heading.current.focus(); focusHeading.current = false; }
+  }, [msgs.data, msgs.loading]);
   async function classify(label: ConversationStage) {
     if (!conv) return;
     try { await getApi().conversations.classify(conv.id, label); toast(label === "unsubscribe" ? "Адрес добавлен в список подавления" : "Класс ответа обновлён"); }
