@@ -4,6 +4,7 @@ name: leadhunter
 services:
   web:
     image: ${WEB_IMAGE:?WEB_IMAGE не задан}
+    pull_policy: never   # образ собирается на сервере службой lh-update
     restart: unless-stopped
     read_only: true
     tmpfs:

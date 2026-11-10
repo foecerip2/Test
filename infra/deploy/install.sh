@@ -1,32 +1,26 @@
 #!/usr/bin/env bash
-# LeadHunter — автоустановщик с GitHub на сервер. Запускается ОДНОЙ командой на чистом VPS от root.
+# LeadHunter — установка на чистый VPS ОДНОЙ командой (без токенов и секретов). Запускать от root.
 #
-#   read -rs -p "GitHub token: " T; echo
-#   curl -fsSL -H "Authorization: Bearer $T" -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/OWNER/REPO/contents/infra/deploy/install.sh?ref=main" \
-#     | GH_TOKEN="$T" bash -s -- --repo OWNER/REPO --domain ai.vaylonet.ru
+#   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/infra/deploy/install.sh | bash -s -- --repo OWNER/REPO --domain ai.vaylonet.ru
 #
-# Что делает:
-#   1. проверяет токен, DNS домена и что домен указывает на ЭТОТ сервер;
-#   2. скачивает bootstrap-vps.sh из репозитория и настраивает сервер (Docker, deploy-пользователь, firewall…);
-#   3. создаёт ключ деплоя; в GitHub создаёт окружение `production` с обязательным одобрением (вами)
-#      и записывает секреты DEPLOY_HOST / DEPLOY_SSH_KEY / DEPLOY_KNOWN_HOSTS;
-#   4. стирает ключи и токен с сервера. Если одобрение настроить нельзя — секреты НЕ записываются (безопасный отказ).
-# Токен: fine-grained PAT только на этот репозиторий (Administration RW, Secrets RW, Contents R, Actions RW, Metadata R)
-# со сроком 1 день, либо classic `repo`. После установки отзовите токен. Токен не сохраняется на диск.
+# Что делает (ничего не удаляет; при занятых портах 80/443 останавливается и ничего не ломает):
+#   1. проверяет, что домен указывает на этот сервер и порты 80/443 свободны;
+#   2. ставит Docker, firewall (22/80/443), fail2ban, автообновления безопасности, swap (если нет);
+#   3. создаёт /opt/leadhunter и ставит службу `lh-update` (systemd-таймер каждые ~3 мин):
+#      она забирает с GitHub ОПУБЛИКОВАННЫЕ релизы проекта, проверяет, что тесты прошли, собирает и запускает сайт,
+#      при сбое сама откатывается. Одобрение = нажатие «Publish release» владельцем на GitHub;
+#   4. выводит временный пароль входа на сайт (один раз).
+# Секретов, токенов и входящего SSH для деплоя не нужно.
 set -euo pipefail
 
-REPO=""; REF="main"; DOMAIN="ai.vaylonet.ru"; REVIEWER=""; HARDEN=0; DEPLOY_NOW=0
-BOOTSTRAP_FILE=""        # для тестов: путь к локальному bootstrap
+REPO=""; REF="main"; DOMAIN="ai.vaylonet.ru"; HARDEN=0; SKIP_FIRST=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) REPO="${2:-}"; shift 2 ;;
     --ref) REF="${2:-}"; shift 2 ;;
     --domain) DOMAIN="${2:-}"; shift 2 ;;
-    --reviewer) REVIEWER="${2:-}"; shift 2 ;;
     --harden-ssh) HARDEN=1; shift ;;
-    --deploy-now) DEPLOY_NOW=1; shift ;;
-    --bootstrap-file) BOOTSTRAP_FILE="${2:-}"; shift 2 ;;
+    --no-first-run) SKIP_FIRST=1; shift ;;
     *) echo "Неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
 done
@@ -38,100 +32,131 @@ die() { printf '\nОШИБКА: %s\n' "$*" >&2; exit 1; }
 [[ "$REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "Укажите --repo OWNER/REPO"
 [[ "$DOMAIN" =~ ^[a-z0-9.-]+$ ]] || die "Некорректный домен"
 [[ "$REF" =~ ^[A-Za-z0-9._/-]+$ ]] || die "Некорректный --ref"
-OWNER="${REPO%%/*}"; REVIEWER="${REVIEWER:-$OWNER}"
-[[ "$REVIEWER" =~ ^[A-Za-z0-9-]+$ ]] || die "Некорректный --reviewer"
-
-if [ -z "${GH_TOKEN:-}" ]; then
-  read -rs -p "GitHub token (ввод скрыт): " GH_TOKEN; echo
-fi
-[ -n "$GH_TOKEN" ] || die "Нужен токен GitHub"
-export GH_TOKEN
-export GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1
-
-WORK="$(mktemp -d)"; chmod 700 "$WORK"
-cleanup() {
-  if [ -d "$WORK" ]; then find "$WORK" -type f -exec shred -u {} + 2>/dev/null || true; rm -rf "$WORK"; fi
-  unset GH_TOKEN
-}
-trap cleanup EXIT
-
-say "Необходимые пакеты"
+# shellcheck disable=SC1091
+. /etc/os-release
+case "${ID}" in ubuntu|debian) ;; *) die "Поддерживаются Ubuntu/Debian, найдено: ${ID}" ;; esac
 export DEBIAN_FRONTEND=noninteractive
-if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
-  apt-get update -qq
-  apt-get install -y -qq curl ca-certificates gnupg jq openssh-client iproute2 >/dev/null
-fi
-if ! command -v gh >/dev/null 2>&1; then
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli.gpg
-  chmod a+r /etc/apt/keyrings/githubcli.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
-  apt-get update -qq
-  apt-get install -y -qq gh >/dev/null
-fi
 
-say "Проверка доступа к репозиторию $REPO"
-gh api "repos/$REPO" --jq '.full_name' >/dev/null || die "Токен не видит репозиторий $REPO (проверьте права токена)"
-REVIEWER_ID="$(gh api "users/$REVIEWER" --jq '.id')" || die "Пользователь GitHub $REVIEWER не найден"
-
-say "Проверка DNS: $DOMAIN должен указывать на этот сервер"
+say "Проверка: домен → этот сервер"
+apt-get update -qq
+apt-get install -y -qq ca-certificates curl gnupg jq git ufw fail2ban unattended-upgrades openssl iproute2 >/dev/null
 DNS_IPS="$(getent ahostsv4 "$DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')"
 LOCAL_IPS="${LH_LOCAL_IPS:-$(ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | tr '\n' ' ')}"
 MATCH=""
 for ip in $DNS_IPS; do for l in $LOCAL_IPS; do [ "$ip" = "$l" ] && MATCH="$ip"; done; done
 [ -n "$MATCH" ] || die "DNS $DOMAIN → [${DNS_IPS}], а адреса этого сервера [${LOCAL_IPS}]. Сертификат HTTPS не выпустится — поправьте DNS."
-HOST_IP="$MATCH"
-echo "OK: $DOMAIN → $HOST_IP"
+echo "OK: $DOMAIN → $MATCH"
 
-say "Загрузка bootstrap-vps.sh ($REPO@$REF)"
-if [ -n "$BOOTSTRAP_FILE" ]; then
-  cp "$BOOTSTRAP_FILE" "$WORK/bootstrap-vps.sh"
-else
-  gh api -H "Accept: application/vnd.github.raw" "repos/$REPO/contents/infra/deploy/bootstrap-vps.sh?ref=$REF" > "$WORK/bootstrap-vps.sh" \
-    || die "Не удалось скачать infra/deploy/bootstrap-vps.sh из ветки $REF (она должна существовать в репозитории)"
-fi
-bash -n "$WORK/bootstrap-vps.sh" || die "Скачанный скрипт повреждён"
-
-say "Ключ деплоя"
-ssh-keygen -q -t ed25519 -N '' -C "github-deploy-$(date +%Y%m%d)" -f "$WORK/deploy_key"
-
-say "Настройка сервера (bootstrap)"
-ARGS=(--deploy-pubkey "$(cat "$WORK/deploy_key.pub")" --domain "$DOMAIN")
-[ "$HARDEN" -eq 1 ] && ARGS+=(--harden-ssh)
-bash "$WORK/bootstrap-vps.sh" "${ARGS[@]}"
-
-say "GitHub: окружение production с обязательным одобрением ($REVIEWER)"
-BODY="$(jq -n --argjson id "$REVIEWER_ID" '{reviewers:[{type:"User",id:$id}],deployment_branch_policy:{protected_branches:false,custom_branch_policies:true}}')"
-printf '%s' "$BODY" | gh api -X PUT "repos/$REPO/environments/production" --input - >/dev/null \
-  || die "Не удалось создать окружение production (нужны права Administration у токена)"
-gh api -X POST "repos/$REPO/environments/production/deployment-branch-policies" -f name=main -f type=branch >/dev/null 2>&1 || true
-
-# Безопасный отказ: без включённого одобрения секреты деплоя не записываем (иначе деплой пойдёт без вашей кнопки).
-GOT="$(gh api "repos/$REPO/environments/production" --jq '[.protection_rules[]? | select(.type=="required_reviewers")] | length' 2>/dev/null || echo 0)"
-if [ "${GOT:-0}" -lt 1 ]; then
-  die "GitHub не включил «Required reviewers» для приватного репозитория (нужен платный план GitHub или публичный репозиторий). Секреты деплоя НЕ записаны, чтобы не получить автодеплой без вашего одобрения. Сервер уже настроен; выберите вариант и перезапустите установщик."
+say "Проверка: порты 80 и 443 свободны (если там уже что-то работает — не трогаем)"
+if [ -z "${LH_SKIP_PORT_CHECK:-}" ] && [ ! -f /opt/leadhunter/lh.conf ]; then
+  BUSY="$(ss -ltnH '( sport = :80 or sport = :443 )' 2>/dev/null || true)"
+  if [ -n "$BUSY" ]; then
+    echo "$BUSY" >&2
+    die "Порты 80/443 уже заняты другим сервисом. Я ничего не менял. Освободите порты или пришлите вывод 'ss -ltnp' для выбора схемы."
+  fi
 fi
 
-say "GitHub: секреты окружения production"
-HOSTKEY="${LH_HOSTKEY_PUB:-/etc/ssh/ssh_host_ed25519_key.pub}"
-KNOWN="$HOST_IP $(cut -d' ' -f1,2 "$HOSTKEY")"
-gh secret set DEPLOY_HOST --env production --repo "$REPO" --body "$HOST_IP" >/dev/null
-gh secret set DEPLOY_SSH_KEY --env production --repo "$REPO" < "$WORK/deploy_key" >/dev/null
-gh secret set DEPLOY_KNOWN_HOSTS --env production --repo "$REPO" --body "$KNOWN" >/dev/null
-echo "Записаны: DEPLOY_HOST, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS (окружение production)"
+if ! command -v docker >/dev/null 2>&1; then
+  say "Docker (официальный репозиторий)"
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
+  apt-get update -qq
+  apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null
+  systemctl enable --now docker
+fi
 
-if [ "$DEPLOY_NOW" -eq 1 ]; then
-  say "Запуск первого деплоя"
-  gh workflow run ci.yml --repo "$REPO" --ref main >/dev/null && echo "Запущено. Одобрите деплой: https://github.com/$REPO/actions" \
-    || echo "Не удалось запустить workflow (нужна ветка main с .github/workflows/ci.yml и права Actions у токена)."
+if [ -z "$(swapon --show --noheadings 2>/dev/null)" ]; then
+  say "Swap 2 ГБ (для сборки на сервере с 4 ГБ RAM)"
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+say "Каталог /opt/leadhunter и конфигурация"
+install -d -m 0755 /opt/leadhunter
+printf 'REPO=%s\n' "$REPO" > /opt/leadhunter/lh.conf
+ENVF=/opt/leadhunter/.env
+[ -f "$ENVF" ] || { install -m 0600 /dev/null "$ENVF"; printf 'DOMAIN=%s\nBASIC_USER=owner\nBASIC_HASH=\nWEB_IMAGE=\n' "$DOMAIN" > "$ENVF"; }
+if ! grep -qE '^BASIC_HASH=.+' "$ENVF"; then
+  PASS="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)"
+  HASH="$(docker run --rm caddy:2.8-alpine caddy hash-password --plaintext "$PASS")"
+  sed -i "s|^BASIC_HASH=.*|BASIC_HASH=${HASH//\$/\$\$}|" "$ENVF"
+  echo
+  echo "################################################################"
+  echo " Временный пароль входа на сайт (до появления настоящей авторизации)"
+  echo "   логин: owner     пароль: ${PASS}"
+  echo " Сохраните его в менеджере паролей. Показан ТОЛЬКО сейчас."
+  echo "################################################################"
+fi
+
+say "Служба обновления lh-update"
+if [ -n "${LH_UPDATE_FILE:-}" ]; then cp "$LH_UPDATE_FILE" /usr/local/sbin/lh-update
+else curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/infra/deploy/lh-update.sh" -o /usr/local/sbin/lh-update; fi
+bash -n /usr/local/sbin/lh-update || die "Скачанный lh-update повреждён"
+chmod 0755 /usr/local/sbin/lh-update
+cat > /etc/systemd/system/lh-update.service <<'UNIT'
+[Unit]
+Description=LeadHunter: обновление из GitHub Releases
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lh-update
+Nice=10
+TimeoutStartSec=1800
+UNIT
+cat > /etc/systemd/system/lh-update.timer <<'UNIT'
+[Unit]
+Description=LeadHunter: проверка новых релизов каждые 3 минуты
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+RandomizedDelaySec=30
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now lh-update.timer >/dev/null
+
+say "Firewall, fail2ban, автообновления безопасности"
+SSHPORT="$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')"; SSHPORT="${SSHPORT:-22}"
+ufw default deny incoming >/dev/null
+ufw default allow outgoing >/dev/null
+ufw limit "${SSHPORT}/tcp" >/dev/null
+ufw allow 80/tcp >/dev/null
+ufw allow 443/tcp >/dev/null
+ufw allow 443/udp >/dev/null
+ufw --force enable >/dev/null
+printf '[sshd]\nenabled = true\nmaxretry = 5\nfindtime = 10m\nbantime = 1h\n' > /etc/fail2ban/jail.d/leadhunter.local
+systemctl enable --now fail2ban >/dev/null 2>&1 || true
+systemctl restart fail2ban || true
+dpkg-reconfigure -f noninteractive unattended-upgrades >/dev/null 2>&1 || true
+
+if [ "$HARDEN" -eq 1 ]; then
+  say "Отключение входа по паролю"
+  [ -s /root/.ssh/authorized_keys ] || die "У root нет SSH-ключа — вы потеряете доступ. Сначала добавьте свой ключ."
+  install -d -m 0755 /etc/ssh/sshd_config.d
+  printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/99-leadhunter.conf
+  sshd -t
+  systemctl reload ssh 2>/dev/null || systemctl reload sshd
+fi
+
+if [ "$SKIP_FIRST" -eq 0 ]; then
+  say "Первая проверка релизов"
+  /usr/local/sbin/lh-update || echo "(релизов ещё нет или сборка не удалась — см. 'journalctl -u lh-update')"
 fi
 
 say "Готово"
 cat <<EOF
-Сервер: $HOST_IP ($DOMAIN) настроен. Ключ деплоя записан в GitHub и стёрт с сервера.
-Дальше:
-  1) Слейте ветку с проектом в main (или нажмите Run workflow в Actions).
-  2) GitHub пришлёт запрос на одобрение деплоя → «Review deployments» → Approve.
-  3) Откройте https://$DOMAIN (логин owner, пароль — из вывода выше).
-  4) ОТОЗОВИТЕ токен GitHub, который вы вводили, и смените пароль root.
+Сервер настроен. Служба lh-update проверяет GitHub каждые ~3 минуты.
+Как выпустить обновление: после зелёных тестов в main GitHub создаёт ЧЕРНОВИК релиза →
+  github.com/$REPO/releases → откройте черновик → «Publish release» → сайт обновится сам (https://$DOMAIN).
+Откат: опубликуйте/отметьте как «Latest» прежний релиз, либо на сервере: lh-update --rollback
+Логи: journalctl -u lh-update -n 50
+Сейчас: смените пароль root и по возможности перейдите на вход по SSH-ключу (флаг --harden-ssh).
 EOF

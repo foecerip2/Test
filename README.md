@@ -2,7 +2,7 @@
 
 Приватный кабинет для поиска и квалификации автосервисов, согласования сообщений и контроля ответов. Сайт + Android-приложение.
 
-Статус: **Фаза 1** (интерфейс на демо-данных) завершена; впереди Фаза 2 (backend, вход). Деплой: GitHub Actions → одобрение владельца → VPS (`https://ai.vaylonet.ru`).
+Статус: **Фаза 1** (интерфейс на демо-данных) завершена; впереди Фаза 2 (backend, вход). Деплой: GitHub Actions → «Publish release» владельцем → сервер сам обновляется (`https://ai.vaylonet.ru`).
 
 - Установка на сервер одной командой и регламент: [docs/OPERATIONS.md](docs/OPERATIONS.md)
 - План и аудит: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) · Решения: [docs/DECISIONS.md](docs/DECISIONS.md) · Задачи: [docs/TASKS.md](docs/TASKS.md)
