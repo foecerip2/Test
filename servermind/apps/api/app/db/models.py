@@ -305,3 +305,63 @@ class JobStep(Base):
     checks: Mapped[Any] = mapped_column(JSONB)          # [{name, ok, detail}]
     planned_action: Mapped[str] = mapped_column(Text, default="")  # что БЫЛО БЫ выполнено (без секретов)
     created_at: Mapped[dt.datetime] = _now()
+
+
+class Wallet(Base):
+    """Кошелёк организации в целых минимальных единицах кредитов. Это КЭШ суммы ledger (источник истины — ledger_entries):
+    CHECK на уровне БД не даёт балансу уйти в минус (available = balance - held >= 0). Обновляется только в той же транзакции, что и проводка."""
+
+    __tablename__ = "wallets"
+    __table_args__ = (
+        CheckConstraint("balance >= 0", name="ck_wallet_balance_nonneg"),
+        CheckConstraint("held >= 0", name="ck_wallet_held_nonneg"),
+        CheckConstraint("held <= balance", name="ck_wallet_available_nonneg"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    balance: Mapped[int] = mapped_column(BigInteger, default=0)
+    held: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Reservation(Base):
+    """Резерв под будущее списание. Состояние меняется строго open → captured | released (один раз): защита от двойного списания."""
+
+    __tablename__ = "ledger_reservations"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_reservation_amount_pos"),
+        CheckConstraint("status in ('open','captured','released')", name="ck_reservation_status"),
+        CheckConstraint("captured >= 0 and captured <= amount", name="ck_reservation_captured"),
+        Index("ix_reservations_open", "status", "created_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    captured: Mapped[int] = mapped_column(BigInteger, default=0)
+    status: Mapped[str] = mapped_column(String(10), default="open")
+    created_at: Mapped[dt.datetime] = _now()
+    settled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LedgerEntry(Base):
+    """Проводка. Append-only (триггер БД). Идемпотентность: UNIQUE (organization_id, idempotency_key)."""
+
+    __tablename__ = "ledger_entries"
+    __table_args__ = (
+        CheckConstraint("kind in ('credit','reserve','capture','release','adjustment')", name="ck_ledger_kind"),
+        CheckConstraint("amount <> 0", name="ck_ledger_amount_nonzero"),
+        CheckConstraint("kind = 'adjustment' or amount > 0", name="ck_ledger_amount_sign"),
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_ledger_idempotency"),
+        Index("ix_ledger_org_time", "organization_id", "created_at"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(10))
+    amount: Mapped[int] = mapped_column(BigInteger)  # >0; только у adjustment допускается знак
+    idempotency_key: Mapped[str] = mapped_column(String(80))
+    reservation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ledger_reservations.id", ondelete="SET NULL"), nullable=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    note: Mapped[str] = mapped_column(String(240), default="")
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[dt.datetime] = _now()

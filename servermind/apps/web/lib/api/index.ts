@@ -230,8 +230,10 @@ export const api = {
     invites: () => pick<Invite[]>((m) => m.invites(), () => request("GET", "/admin/invites")),
     createInvite: () => pick<Invite>((m) => m.createInvite(), () => request("POST", "/admin/invites")),
     audit: () => pick<AuditEvent[]>((m) => m.audit(), () => request("GET", "/admin/audit")),
-    issueCredits: (input: { email: string; amount: number; reason: string }) =>
-      pick<{ ok: true }>((m) => m.issueCredits(input), () => request("POST", "/admin/credits/issue", input)),
+    /** idempotencyKey создаётся ОДИН раз на открытие диалога: повтор/двойной клик с тем же ключом не начислит кредиты второй раз. */
+    issueCredits: (input: { email: string; amount: number; reason: string; idempotencyKey?: string }) =>
+      pick<{ ok: true }>((m) => m.issueCredits(input), () =>
+        request("POST", "/admin/credits/issue", { ...input, idempotencyKey: input.idempotencyKey ?? crypto.randomUUID() })),
     flags: () => pick<FeatureFlag[]>((m) => m.flags(), () => request("GET", "/admin/flags")),
     setFlag: (key: string, enabled: boolean) =>
       pick<FeatureFlag[]>((m) => m.setFlag(key, enabled), () => request("PUT", `/admin/flags/${encodeURIComponent(key)}`, { enabled })),

@@ -5,15 +5,37 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
+import time
 
+from app.core.config import get_settings
 from app.db.session import _factory
+from app.modules.billing import ledger
 from app.modules.executor.runner import run_once
 
 log = logging.getLogger("servermind.worker")
 
 
+_last_sweep = 0.0
+SWEEP_EVERY_SECONDS = 60.0
+
+
+def sweep_reservations() -> None:
+    """Раз в минуту освобождает «повисшие» резервы кредитов (процесс упал между резервом и списанием)."""
+    global _last_sweep
+    now = time.monotonic()
+    if now - _last_sweep < SWEEP_EVERY_SECONDS:
+        return
+    _last_sweep = now
+    with _factory()() as db:
+        n = ledger.release_stale(db, dt.timedelta(minutes=get_settings().stale_reservation_minutes))
+    if n:
+        log.warning("released %d stale credit reservations", n)
+
+
 def tick() -> bool:
+    sweep_reservations()
     with _factory()() as db:
         return run_once(db)
 

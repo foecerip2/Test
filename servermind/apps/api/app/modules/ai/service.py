@@ -22,6 +22,9 @@ from app.modules.ai import context as ctxmod
 from app.modules.ai.prompts import SYSTEM_PROMPT, tool_defs
 from app.modules.ai.providers import PROVIDERS, ProviderError, ToolCall
 from app.modules.audit import service as audit
+from app.modules.billing import credits as credits_mod
+from app.modules.billing import ledger
+from app.modules.billing.ledger import LedgerError
 from app.modules.policy.catalog import READ_TOOLS
 from app.modules.policy.engine import PolicyViolation, validate_proposal
 from app.modules.policy.plan_hash import compute_hash, format_expires
@@ -61,9 +64,6 @@ def get_conversation(db: Session, ctx: AuthContext, server: Server) -> Conversat
 
 
 def _pick_key(db: Session, ctx: AuthContext) -> AiKey:
-    org = db.get(Organization, ctx.org_id)
-    if org is not None and org.ai_mode != "byok":
-        raise ApiError(409, "mode_unavailable", "Режим кредитов пока недоступен (Фаза 5). Используйте собственный ключ.")
     key = db.scalar(select(AiKey).where(AiKey.organization_id == ctx.org_id, AiKey.status != "invalid").order_by(AiKey.created_at.desc()).limit(1))
     if key is None:
         raise ApiError(403, "no_key", "Не подключён ключ провайдера. Добавьте его в разделе «Биллинг».")
@@ -115,18 +115,28 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
     if not text or len(text) > MAX_USER_TEXT:
         raise ApiError(422, "validation", f"Сообщение — от 1 до {MAX_USER_TEXT} символов.")
     _guard(ctx)
-    key = _pick_key(db, ctx)
-    provider = PROVIDERS[key.provider]
-    try:
-        api_key = decrypt(s.master_key_bytes, key.key_enc, key_aad(ctx.org_id, key.provider)).decode()
-    except Exception:  # noqa: BLE001 — любая ошибка расшифровки = конфигурация ключей
-        raise ApiError(500, "crypto", "Не удалось расшифровать ключ провайдера.") from None
+    org = db.get(Organization, ctx.org_id)
+    use_credits = org is not None and org.ai_mode == "credits"
+    key: AiKey | None = None
+    if use_credits:  # ServerMind Credits: ключ платформы из окружения, списание по ledger
+        if not s.platform_ai_configured:
+            raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен на сервере (нет ключа платформы или цен). Используйте собственный ключ (BYOK).")
+        provider_name, model_name, api_key = s.platform_ai_provider, s.platform_ai_model, s.platform_ai_key
+    else:
+        key = _pick_key(db, ctx)
+        provider_name, model_name = key.provider, key.model
+        try:
+            api_key = decrypt(s.master_key_bytes, key.key_enc, key_aad(ctx.org_id, key.provider)).decode()
+        except Exception:  # noqa: BLE001 — любая ошибка расшифровки = конфигурация ключей
+            raise ApiError(500, "crypto", "Не удалось расшифровать ключ провайдера.") from None
+    provider = PROVIDERS[provider_name]
 
     conv = get_conversation(db, ctx, server)
     history = _history(db, conv)
     user_msg = Message(organization_id=ctx.org_id, conversation_id=conv.id, role="user", content=text, meta={})
     db.add(user_msg)
     db.flush()
+    msg_id = user_msg.id
 
     samples = list(reversed(db.scalars(select(ServerMetricSample).where(
         ServerMetricSample.server_id == server.id, ServerMetricSample.organization_id == ctx.org_id)
@@ -136,15 +146,24 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
     messages: list[dict[str, Any]] = [*history, {"role": "user", "content": f"{block}\n\nВопрос пользователя:\n{text}"}]
     tools = tool_defs(can_propose=ctx.role in ("owner", "operator"))
 
+    reservation_id: uuid.UUID | None = None
+    if use_credits:  # квота и резерв ДО обращения к провайдеру: без кредитов модель не вызывается
+        amount = credits_mod.estimate_reserve(sum(len(str(m.get("content") or "")) for m in messages) + len(SYSTEM_PROMPT), s)
+        credits_mod.check_caps(ctx.org_id, amount, s)
+        reservation_id = credits_mod.reserve_for_chat(ctx.org_id, ctx.user.id, msg_id, amount)
+
     tool_log: list[dict[str, Any]] = []
     observed: list[str] = []
     proposal: dict[str, Any] | None = None
     final = ""
+    tokens_in = tokens_out = 0
     try:
         for _ in range(s.ai_max_iterations):
-            turn = provider.chat(api_key=api_key, model=key.model, system=SYSTEM_PROMPT, messages=messages, tools=tools,
+            turn = provider.chat(api_key=api_key, model=model_name, system=SYSTEM_PROMPT, messages=messages, tools=tools,
                                  max_tokens=s.ai_max_output_tokens, timeout=s.ai_timeout_seconds)
-            db.add(AiUsage(organization_id=ctx.org_id, user_id=ctx.user.id, provider=key.provider, model=key.model,
+            tokens_in += turn.input_tokens
+            tokens_out += turn.output_tokens
+            db.add(AiUsage(organization_id=ctx.org_id, user_id=ctx.user.id, provider=provider_name, model=model_name,
                            input_tokens=turn.input_tokens, output_tokens=turn.output_tokens))
             if not turn.tool_calls:
                 final = turn.text
@@ -161,19 +180,37 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
             final = "Не удалось завершить анализ за допустимое число шагов. Уточните вопрос."
     except ProviderError as e:
         db.rollback()  # сообщение пользователя и частичные результаты не сохраняются — повтор не создаст дублей
+        if reservation_id is not None:
+            credits_mod.release_quiet(reservation_id, msg_id)  # кредиты за неудавшийся запрос не списываются
         status, code = _ERR_STATUS.get(e.code, (502, "ai_error"))
-        if e.code == "auth":
+        if use_credits and e.code == "auth":  # проблема ключа ПЛАТФОРМЫ — это не ошибка пользователя
+            raise ApiError(502, "ai_unavailable", "AI временно недоступен (проблема на стороне платформы). Кредиты не списаны.") from None
+        if e.code == "auth" and key is not None:
             row = db.get(AiKey, key.id)
             if row is not None:
                 row.status = "invalid"
                 db.commit()
         raise ApiError(status, code, e.message) from None
+    except Exception:
+        db.rollback()
+        if reservation_id is not None:
+            credits_mod.release_quiet(reservation_id, msg_id)
+        raise
+
+    if reservation_id is not None:  # списание по фактическим токенам — в той же транзакции, что и ответ (всё или ничего)
+        try:
+            ledger.capture(db, reservation_id, credits_mod.cost(tokens_in, tokens_out, s), key=f"chat:{msg_id}:capture", model=model_name,
+                           tokens_in=tokens_in, tokens_out=tokens_out, note=f"AI-запрос; прайс-лист {s.price_list_version or 'не указан'}")
+        except LedgerError as e:
+            db.rollback()
+            credits_mod.release_quiet(reservation_id, msg_id)
+            raise ApiError(e.status, e.code, "Не удалось списать кредиты. Повторите запрос.") from None
 
     final = redact(final).strip() or "Модель не вернула текст ответа."
     assistant = Message(organization_id=ctx.org_id, conversation_id=conv.id, role="assistant", content=final[:8000],
                         meta={"tools": tool_log, "observed": list(dict.fromkeys(observed))[:12], "proposal": proposal})
     db.add(assistant)
-    audit.record(db, "ai.chat", org_id=ctx.org_id, actor_id=ctx.user.id, target=str(server.id), meta={"provider": key.provider, "tools": len(tool_log)})
+    audit.record(db, "ai.chat", org_id=ctx.org_id, actor_id=ctx.user.id, target=str(server.id), meta={"provider": provider_name, "mode": "credits" if use_credits else "byok", "tools": len(tool_log)})
     db.commit()
     return user_msg, assistant
 

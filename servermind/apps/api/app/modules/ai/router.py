@@ -118,9 +118,16 @@ def get_mode(ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db
 @router.put("/billing/mode")
 def set_mode(body: ModeBody, ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> dict[str, str]:
     require_role(ctx, "owner")
-    if body.mode == "credits":
-        raise ApiError(409, "mode_unavailable", "Режим кредитов появится в Фазе 5. Сейчас доступны только собственные ключи (BYOK).")
-    return {"mode": "byok"}
+    if body.mode == "credits" and not get_settings().platform_ai_configured:
+        raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен на сервере: не заданы ключ платформы и цены. Используйте собственные ключи (BYOK).")
+    org = db.get(Organization, ctx.org_id)
+    if org is None:
+        raise ApiError(404, "not_found", "Организация не найдена.")
+    if org.ai_mode != body.mode:
+        org.ai_mode = body.mode
+        audit.record(db, "billing.mode_changed", org_id=ctx.org_id, actor_id=ctx.user.id, meta={"mode": body.mode})
+        db.commit()
+    return {"mode": body.mode}
 
 
 @router.get("/conversations")

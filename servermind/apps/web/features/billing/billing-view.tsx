@@ -133,6 +133,7 @@ export function BillingView() {
                           <span tabIndex={0} className="inline-flex"><Button disabled aria-disabled><Plus aria-hidden /> Пополнить · скоро</Button></span>
                         </Tooltip>
                       </div>
+                      {bal.creditsConfigured === false && <InlineAlert tone="info" title="Режим кредитов не настроен на сервере">Не заданы ключ платформы и цены. Пока доступны только собственные ключи (BYOK).</InlineAlert>}
                       {bal.available <= 0 && <InlineAlert tone="danger" title="Кредиты закончились">AI-запросы недоступны. Подключите собственный ключ (BYOK) или обратитесь к администратору беты.</InlineAlert>}
                       {bal.available > 0 && bal.available < 200 && <InlineAlert tone="warning" title="Низкий баланс">Кредитов хватит на небольшое число запросов.</InlineAlert>}
                     </>

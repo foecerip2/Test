@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Copy, Plus, PowerOff } from "lucide-react";
 import { api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
@@ -32,6 +32,7 @@ export function AdminView() {
   const [creditErr, setCreditErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [killOpen, setKillOpen] = useState(false);
+  const idemKey = useRef<string>(crypto.randomUUID()); // один ключ на попытку выдачи; обновляется после успеха
 
   if (me.state.status === "loading") return <SkeletonBlock className="h-64 rounded-card" />;
   if (me.state.status === "error") return <ErrorState code={me.state.code} message={me.state.message} onRetry={me.reload} />;
@@ -43,10 +44,11 @@ export function AdminView() {
     setCreditErr(null);
     if (!checkEmail(email)) { setCreditErr("Укажите корректный email пользователя."); return; }
     setBusy(true);
-    const r = await api.admin.issueCredits({ email: email.trim(), amount: Number(amount), reason });
+    const r = await api.admin.issueCredits({ email: email.trim(), amount: Number(amount), reason, idempotencyKey: idemKey.current });
     setBusy(false);
     if (!r.ok) { setCreditErr(r.message); return; }
     toast.push({ tone: "success", title: "Тестовые кредиты выданы", description: "Операция записана в аудит." });
+    idemKey.current = crypto.randomUUID();
     setCreditOpen(false); setReason(""); void audit.reload();
   };
   const setKill = async (enabled: boolean) => {

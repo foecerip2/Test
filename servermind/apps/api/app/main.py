@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.permissions import ApiError
 from app.db.session import get_engine
 from app.modules.ai.router import router as ai_router
+from app.modules.billing.router import router as billing_router
 from app.modules.executor import worker
 from app.modules.executor.router import router as executor_router
 from app.modules.identity.router import router as identity_router
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(ai_router, prefix="/api/v1")
     app.include_router(plans_router, prefix="/api/v1")
     app.include_router(executor_router, prefix="/api/v1")
+    app.include_router(billing_router, prefix="/api/v1")
     return app
 
 
