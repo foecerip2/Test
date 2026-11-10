@@ -1,6 +1,6 @@
 import type {
   ActionPlan, AiKey, AuditEvent, Balance, ChatMessage, DeployTemplate, Deployment, FeatureFlag, Invite,
-  LedgerEntry, Me, MetricSample, Operation, Provider, Result, ServerSummary, SessionInfo,
+  JobEvent, LedgerEntry, Me, MetricSample, Operation, Provider, Result, ServerSummary, SessionInfo,
 } from "@/lib/types";
 
 /**
@@ -85,7 +85,35 @@ async function pick<T>(f: (m: Fx) => Promise<Result<T>>, real: () => Promise<Res
 export interface ProbeResult { fingerprint: string; keyType: string; source: "ssh" | "demo" }
 export interface VerifyResult { os: string; server: ServerSummary }
 /** Ответ реального API на подтверждение (Фаза 3): согласие записано, исполнитель появится в Фазе 4. */
-export interface ApprovalRecorded { planId: string; status: "approved"; executionAvailable: false; message: string }
+export interface ApprovalRecorded { planId: string; status: "approved"; executionAvailable: false; rehearsalAvailable?: boolean; message: string }
+
+/** Ответ исполнителя (режим «репетиция») приводится к общему типу Operation. На сервер при этом ничего не отправляется. */
+interface RawJobStep { order: number; stepId: string; tool: string; status: string; checks: { name: string; ok: boolean; detail: string }[]; plannedAction: string; at: string }
+interface RawJob {
+  id: string; planId: string; serverId: string; serverName: string; title: string; risk: Operation["risk"]; actor: string;
+  status: Operation["status"]; summary: string; createdAt: string; startedAt: string | null; finishedAt: string | null;
+  stepsDone: number; stepsTotal: number; steps?: RawJobStep[];
+}
+const STEP_LABEL: Record<string, string> = { rehearsed: "проверки пройдены", blocked: "остановлен", failed: "ошибка", skipped: "пропущен" };
+export function adaptJob(j: RawJob): Operation {
+  const events: JobEvent[] = [];
+  let n = 0;
+  const push = (at: string, level: JobEvent["level"], message: string, step?: string) => events.push({ id: `${j.id}:${n++}`, at, level, message, step });
+  push(j.createdAt, "info", "Репетиция поставлена в очередь. На сервере ничего не выполняется.");
+  for (const s of j.steps ?? []) {
+    const level = s.status === "rehearsed" ? "info" : s.status === "skipped" ? "warn" : "error";
+    push(s.at, level, `Шаг ${s.order} · ${s.tool}: ${STEP_LABEL[s.status] ?? s.status}`, s.stepId);
+    for (const c of s.checks.filter((c) => !c.ok)) push(s.at, "error", `Проверка «${c.name}» не пройдена: ${c.detail}`, s.stepId);
+    if (s.plannedAction) push(s.at, "info", `Было бы выполнено (не выполнялось): ${s.plannedAction}`, s.stepId);
+  }
+  if (j.finishedAt) push(j.finishedAt, j.status === "succeeded" ? "info" : "warn", j.summary);
+  return {
+    id: j.id, planId: j.planId, title: j.title, serverId: j.serverId, serverName: j.serverName, status: j.status, risk: j.risk,
+    actor: j.actor, createdAt: j.createdAt, startedAt: j.startedAt, finishedAt: j.finishedAt, stepsDone: j.stepsDone,
+    stepsTotal: j.stepsTotal, events, source: "ssh", mode: "rehearsal",
+  };
+}
+const mapOk = <A, B>(r: Result<A>, f: (a: A) => B): Result<B> => (r.ok ? { ok: true, data: f(r.data) } : r);
 export interface PreflightCheck { id: string; label: string; status: "pass" | "warn" | "fail"; detail: string; blocking: boolean }
 export interface DeployInput { serverId: string; templateId: string; domain: string; envKeys: string[] }
 export interface Policy { requireApprovalR2: true; requireApprovalR3: true; planTtlMinutes: number; maxOperationsPerDay: number }
@@ -137,8 +165,8 @@ export const api = {
   },
 
   operations: {
-    list: () => pick<Operation[]>((m) => m.operations(), () => request("GET", "/jobs")),
-    get: (id: string) => pick<Operation>((m) => m.operation(id), () => request("GET", `/jobs/${encodeURIComponent(id)}`)),
+    list: () => pick<Operation[]>((m) => m.operations(), async () => mapOk(await request<RawJob[]>("GET", "/jobs"), (a) => a.map(adaptJob))),
+    get: (id: string) => pick<Operation>((m) => m.operation(id), async () => mapOk(await request<RawJob>("GET", `/jobs/${encodeURIComponent(id)}`), adaptJob)),
     cancel: (id: string) => pick<Operation>((m) => m.cancel(id), () => request("POST", `/jobs/${encodeURIComponent(id)}/cancel`)),
   },
 
@@ -151,6 +179,11 @@ export const api = {
       pick<Operation | ApprovalRecorded>((m) => m.approve(id, sig), () => request("POST", `/action-plans/${encodeURIComponent(id)}/approve`, sig)),
     reject: (id: string) =>
       pick<ActionPlan>((m) => m.reject(id), () => request("POST", `/action-plans/${encodeURIComponent(id)}/reject`)),
+    /** Репетиция подтверждённого плана: все проверки исполнителя, без изменений на сервере. Только реальный API. */
+    rehearse: async (id: string): Promise<Result<Operation>> => {
+      if (process.env.NEXT_PUBLIC_DEV_FIXTURES === "1") return { ok: false, code: "error", message: "Репетиция доступна только с реальным API." };
+      return mapOk(await request<RawJob>("POST", `/action-plans/${encodeURIComponent(id)}/rehearse`), adaptJob);
+    },
   },
 
   deploy: {

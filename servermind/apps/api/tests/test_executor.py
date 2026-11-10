@@ -77,6 +77,8 @@ def test_happy_rehearsal_checks_everything_and_touches_nothing(client, db, owner
     j = get_job(client, r.json()["id"])
     assert j["status"] == "succeeded" and j["executesOnServer"] is False and "ничего не выполнялось" in j["summary"]
     assert [s["status"] for s in j["steps"]] == ["rehearsed", "rehearsed"]
+    assert j["title"].startswith("Репетиция: ") and j["risk"] == "R2" and j["actor"] == "owner" and (j["stepsDone"], j["stepsTotal"]) == (2, 2)
+    assert client.get(f"{API}/jobs").json()[0]["stepsDone"] == 2
     assert j["steps"][0]["plannedAction"] == "sudo -n /usr/local/sbin/servermind-op service.restart '{\"unit\":\"nginx\"}'"
     names = {c["name"] for c in j["steps"][0]["checks"]}
     assert {"plan_approved", "approval_matches", "hash_integrity", "not_expired", "approver_authorized", "server_ready", "policy",

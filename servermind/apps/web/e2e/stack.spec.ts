@@ -47,7 +47,7 @@ test("реальный стек: вход → обязательная наст�
   await expect(page.getByRole("heading", { name: "seed-web" }).first()).toBeVisible(); // реальный сервер из БД (посеян скриптом), а не фикстура
   const text = await page.locator("body").innerText();
   expect(text).not.toMatch(/Демо-данные|demo-/i);
-  await expect(page.getByText(EMAIL)).toBeVisible(); // реальный пользователь из /me
+  await expect(page.getByText(EMAIL).first()).toBeVisible(); // реальный пользователь из /me (почта показана в двух местах интерфейса)
   test.info().annotations.push({ type: "totp-secret", description: "not-recorded" });
   process.env.STACK_TOTP_SECRET = secret;
 });
@@ -112,6 +112,19 @@ test("реальный стек: публичный ключ сервиса и �
   await expect(page.getByText("План уже подтверждён")).toBeVisible();
   await expect(page.getByText(/ничего не выполнено/).first()).toBeVisible(); // честно: исполнителя ещё нет
   await expect(page.getByRole("button", { name: "Подтвердить…" })).toHaveCount(0);
+
+  // ───── Фаза 4: репетиция исполнителя. Фоновый воркер в процессе API перепроверяет план; на сервер НИЧЕГО не отправляется ─────
+  await page.getByRole("button", { name: "Запустить репетицию" }).click();
+  await expect(page).toHaveURL(/\/operations\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("Это репетиция")).toBeVisible();
+  await expect(page.getByText("Выполнено", { exact: true }).first()).toBeVisible({ timeout: 30_000 }); // воркер взял задание из очереди PostgreSQL
+  await expect(page.getByText("Шаг 1 · service.restart: проверки пройдены")).toBeVisible();
+  await expect(page.getByText(/Было бы выполнено \(не выполнялось\): sudo -n \/usr\/local\/sbin\/servermind-op service\.restart/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Отменить" })).toHaveCount(0); // у репетиции нет «отмены»: нечего останавливать
+  await page.goto("/operations");
+  await expect(page.getByText("Репетиция: Перезапуск nginx").first()).toBeVisible(); // таблица (desktop) и список (mobile) оба в DOM
+  const ops = await page.locator("body").innerText();
+  expect(ops).not.toMatch(/Демо-данные|demo-/i);
 });
 
 test("реальный стек: выход закрывает доступ", async ({ page }) => {

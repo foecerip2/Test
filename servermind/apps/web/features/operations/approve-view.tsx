@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CircleCheck, ShieldCheck, ShieldX } from "lucide-react";
+import { CircleCheck, FlaskConical, ShieldCheck, ShieldX } from "lucide-react";
 import { api } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useToast } from "@/lib/toast";
@@ -24,6 +24,7 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busyStep, setBusyStep] = useState<string | null>(null);
+  const [rehearsing, setRehearsing] = useState(false);
   const [verified, setVerified] = useState<"pending" | "ok" | "mismatch">("pending");
   const waiting = plan.status === "waiting_approval" && left > 0;
 
@@ -61,6 +62,15 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
     } else { setErr(r.message); reload(); }
   };
 
+  // Репетиция: исполнитель перепроверяет план и показывает, что БЫ сделал. На сервере ничего не выполняется.
+  const rehearse = async () => {
+    setRehearsing(true);
+    const r = await api.plans.rehearse(plan.id);
+    setRehearsing(false);
+    if (r.ok) { toast.push({ tone: "info", title: "Репетиция поставлена в очередь", description: "Проверки без изменений на сервере." }); router.push(`/operations/${r.data.id}`); }
+    else toast.push({ tone: "error", title: "Не удалось запустить репетицию", description: r.message });
+  };
+
   const reject = async () => {
     const r = await api.plans.reject(plan.id);
     if (r.ok) {
@@ -81,7 +91,7 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
 
       {plan.status === "approved" && (
         <InlineAlert tone="success" title="План уже подтверждён" className="mb-5">
-          {operation ? <Link href={`/operations/${operation.id}`} className="text-primary underline">Открыть операцию</Link> : "Согласие записано. Исполнитель ещё не подключён — на сервере ничего не выполнено."}
+          {operation ? <Link href={`/operations/${operation.id}`} className="text-primary underline">Открыть операцию</Link> : "Согласие записано. Реальное исполнение выключено — на сервере ничего не выполнено. Можно запустить репетицию: все проверки без изменений."}
         </InlineAlert>
       )}
       {plan.status === "rejected" && <InlineAlert tone="info" title="План отклонён" className="mb-5">Изменений на сервере не было.</InlineAlert>}
@@ -104,6 +114,9 @@ function ApprovePlan({ plan, operation, reload }: { plan: ActionPlan; operation:
             <Button variant="secondary" onClick={reject}><ShieldX aria-hidden /> Отклонить</Button>
             <Button disabled={verified !== "ok"} onClick={() => { setErr(null); setOpen(true); }}><ShieldCheck aria-hidden /> Подтвердить…</Button>
           </div>
+        )}
+        {plan.status === "approved" && !operation && (
+          <Button className="w-fit" onClick={rehearse} loading={rehearsing}><FlaskConical aria-hidden /> Запустить репетицию</Button>
         )}
         {!waiting && <Link href={opHref} className={buttonVariants({ variant: "secondary", className: "w-fit" })}>{operation ? "К операции" : "К ассистенту"}</Link>}
       </div>
