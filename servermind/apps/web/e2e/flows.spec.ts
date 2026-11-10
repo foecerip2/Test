@@ -179,6 +179,8 @@ test("BYOK: ключ не попадает в DOM и хранилище, пок�
   await expect(dlg.getByText("Возможна оплата проверки")).toBeVisible();
   await dlg.getByLabel("API-ключ").fill(KEY);
   expect(await dlg.getByLabel("API-ключ").getAttribute("type")).toBe("password");
+  await expect(dlg.getByRole("button", { name: "Подключить" })).toBeDisabled(); // без имени модели подключить нельзя
+  await dlg.getByLabel("Модель").fill("test-model");
   await dlg.getByRole("button", { name: "Подключить" }).click();
   await expect(page.getByLabel("Маска ключа").filter({ hasText: "sk-••••EY99" })).toBeVisible();
   expect(await page.locator("body").innerText()).not.toContain("TESTKEYTESTKEY");
