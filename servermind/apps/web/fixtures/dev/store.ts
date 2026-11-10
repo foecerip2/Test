@@ -210,8 +210,9 @@ export const probe = (input: { host: string; port: number }) => gate<ProbeResult
   return ok({ fingerprint: "SHA256:Qz8mR9xKpL2vTn4WcYb7HdJeA1sUf3oZiGq6NrXkP2w", keyType: "ED25519", source: "demo" as const });
 }, 700);
 
-export const addServer = (input: { name: string; host: string; port: number; username: string; fingerprint: string }) => gate<VerifyResult>(async () => {
+export const addServer = (input: { name: string; host: string; port: number; username: string; fingerprint: string; acceptRootRisk?: boolean }) => gate<VerifyResult>(async () => {
   const st = await getState();
+  if (input.username === "root" && !input.acceptRootRisk) return fail("validation", "Вход под root даёт ключу ServerMind полный доступ к серверу. Подтвердите риск явным согласием или используйте отдельного пользователя (рекомендуется).");
   if (input.host.toLowerCase().startsWith("mitm.")) return fail("error", "Отпечаток ключа сервера не совпал с подтверждённым. Подключение заблокировано: возможна подмена сервера.");
   if (input.host.toLowerCase().startsWith("nokey.")) return fail("error", "Сервер отклонил ключ ServerMind. Добавьте публичный ключ в ~/.ssh/authorized_keys пользователя " + input.username + ".");
   const s: ServerSummary = {

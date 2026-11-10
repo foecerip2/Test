@@ -82,6 +82,7 @@ async function pick<T>(f: (m: Fx) => Promise<Result<T>>, real: () => Promise<Res
   return real();
 }
 
+export interface AddServerInput { name: string; host: string; port: number; username: string; fingerprint: string; acceptRootRisk?: boolean }
 export interface ProbeResult { fingerprint: string; keyType: string; source: "ssh" | "demo" }
 export interface VerifyResult { os: string; server: ServerSummary }
 /** Ответ реального API на подтверждение (Фаза 3): согласие записано, исполнитель появится в Фазе 4. */
@@ -147,7 +148,7 @@ export const api = {
     publicKey: () => pick<{ key: string; source: "ssh" | "demo" }>((m) => m.publicKey(), () => request("GET", "/servers/public-key")),
     probe: (input: { host: string; port: number }) =>
       pick<ProbeResult>((m) => m.probe(input), () => request("POST", "/servers/probe", input)),
-    add: (input: { name: string; host: string; port: number; username: string; fingerprint: string }) =>
+    add: (input: AddServerInput) =>
       pick<VerifyResult>((m) => m.addServer(input), () => request("POST", "/servers", input)),
     recheck: (id: string) =>
       pick<ServerSummary>((m) => m.recheck(id), () => request("POST", `/servers/${encodeURIComponent(id)}/verify`)),

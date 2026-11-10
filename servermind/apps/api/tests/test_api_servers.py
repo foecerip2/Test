@@ -3,6 +3,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.security import DecryptionError, decrypt
+from app.modules.servers.policy import HostPolicyError, check_username
 from app.modules.servers.ssh import ALLOWED_COMMANDS
 from tests.conftest import login_full, make_user, set_env
 from tests.fake_sshd import FakeSshd
@@ -125,9 +126,28 @@ def test_duplicate_server_conflict(client, h, sshd):
     assert r.status_code == 409 and r.json()["code"] == "duplicate"
 
 
-def test_root_user_is_rejected(client, h, sshd):
+def test_root_requires_explicit_risk_acknowledgement(client, db, h, sshd):
     _, r = _onboard(client, h, sshd, username="root")
-    assert r.status_code == 422 and r.json()["code"] == "username"
+    assert r.status_code == 422 and r.json()["code"] == "root_ack_required" and "полный доступ" in r.json()["message"]
+    assert db.execute(text("SELECT count(*) FROM servers")).scalar() == 0
+    # явный отказ от согласия — то же самое
+    probe = client.post(f"{API}/servers/probe", json={"host": "127.0.0.1", "port": sshd.port}, headers=h).json()
+    body = {"name": "r", "host": "127.0.0.1", "port": sshd.port, "username": "root", "fingerprint": probe["fingerprint"], "acceptRootRisk": False}
+    assert client.post(f"{API}/servers", headers=h, json=body).json()["code"] == "root_ack_required"
+
+
+def test_root_allowed_with_acknowledgement_and_audited(client, db, h, sshd):
+    key = client.get(f"{API}/servers/public-key").json()["key"]
+    sshd.authorize(key)
+    probe = client.post(f"{API}/servers/probe", json={"host": "127.0.0.1", "port": sshd.port}, headers=h).json()
+    r = client.post(f"{API}/servers", headers=h, json={"name": "r", "host": "127.0.0.1", "port": sshd.port, "username": "root",
+                                                      "fingerprint": probe["fingerprint"], "acceptRootRisk": True})
+    assert r.status_code == 201 and r.json()["server"]["username"] == "root"
+    assert db.execute(text("SELECT count(*) FROM audit_events WHERE action='server.root_access_accepted'")).scalar() == 1
+    # согласие не ослабляет прочие проверки имени
+    assert check_username("root", accept_root_risk=True) == "root"
+    with pytest.raises(HostPolicyError):
+        check_username("Bad Name", accept_root_risk=True)
 
 
 def test_private_targets_blocked_by_default_policy(client, h, monkeypatch):

@@ -25,6 +25,17 @@ const EMPTY: Form = { name: "", host: "", port: "22", username: "servermind" };
 
 function bootstrapScript(key: string, user: string) {
   const u = user || "servermind";
+  if (u === "root") {
+    // Домашний каталог root — /root (НЕ /home/root). Пользователя создавать не нужно.
+    return [
+      `# Выполните на VPS от имени root. ServerMind этого не делает.`,
+      `install -d -m 700 /root/.ssh`,
+      `echo '${key}' >> /root/.ssh/authorized_keys`,
+      `chmod 600 /root/.ssh/authorized_keys`,
+      `# Вход root по ключу должен быть разрешён: PermitRootLogin prohibit-password (или yes) в /etc/ssh/sshd_config.`,
+      `# Проверка: grep -i '^PermitRootLogin' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf`,
+    ].join("\n");
+  }
   return [
     `# Выполните на VPS от имени администратора (root или sudo). ServerMind этого не делает.`,
     `adduser --disabled-password --gecos "" ${u}`,
@@ -72,6 +83,7 @@ export function AddServerWizard({ initialStep = 0, onStepChange }: { initialStep
   const [probeError, setProbeError] = useState<string | null>(null);
   const [fpConfirmed, setFpConfirmed] = useState(false);
   const [ownerConfirmed, setOwnerConfirmed] = useState(false);
+  const [rootRiskAccepted, setRootRiskAccepted] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [created, setCreated] = useState<ServerSummary | null>(null);
@@ -100,6 +112,7 @@ export function AddServerWizard({ initialStep = 0, onStepChange }: { initialStep
     const h = checkHost(form.host); if (!h.ok) next.host = h.reason;
     const p = checkPort(form.port); if (!p.ok) next.port = p.reason;
     const u = checkUsername(form.username); if (!u.ok) next.username = u.reason;
+    else if (form.username.trim() === "root" && !rootRiskAccepted) next.username = "Подтвердите риск входа под root (галочка ниже) или используйте отдельного пользователя.";
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -126,6 +139,7 @@ export function AddServerWizard({ initialStep = 0, onStepChange }: { initialStep
     const r = await api.servers.add({
       name: form.name.trim() || form.host.trim(), host: form.host.trim(), port: p.ok ? p.port : 22,
       username: form.username.trim(), fingerprint: probe.fingerprint,
+      acceptRootRisk: form.username.trim() === "root" && rootRiskAccepted,
     });
     setAdding(false);
     if (r.ok) {
@@ -166,7 +180,7 @@ export function AddServerWizard({ initialStep = 0, onStepChange }: { initialStep
             <CardHeader>
               <div>
                 <CardTitle>1. Данные сервера</CardTitle>
-                <CardDescription className="mt-1">Нужен Ubuntu VPS и отдельный пользователь с SSH-ключом (не root).</CardDescription>
+                <CardDescription className="mt-1">Нужен Ubuntu VPS и пользователь с SSH-ключом (лучше отдельный; вход под root — только осознанно).</CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -181,9 +195,18 @@ export function AddServerWizard({ initialStep = 0, onStepChange }: { initialStep
                   {(p) => <Input {...p} value={form.port} onChange={set("port")} inputMode="numeric" />}
                 </Field>
               </div>
-              <Field label="Пользователь" error={errors.username} hint="Отдельный пользователь без прав root. Вход по паролю не используется.">
+              <Field label="Пользователь" error={errors.username} hint="Рекомендуется отдельный пользователь. Вход по паролю не используется — только SSH-ключ.">
                 {(p) => <Input {...p} value={form.username} onChange={set("username")} autoCapitalize="off" autoCorrect="off" spellCheck={false} />}
               </Field>
+              {form.username.trim() === "root" && (
+                <div className="space-y-3">
+                  <InlineAlert tone="warning" title="Вход под root">
+                    Ключ ServerMind получит полный доступ root к серверу. Сейчас ServerMind выполняет только фиксированные команды чтения (ОС, CPU, RAM, диск, службы), а изменения — лишь после вашего подтверждения плана. Ключ можно отозвать в любой момент, удалив строку из /root/.ssh/authorized_keys.
+                  </InlineAlert>
+                  <CheckboxField checked={rootRiskAccepted} onCheckedChange={(v) => { setRootRiskAccepted(v === true); setErrors((er) => ({ ...er, username: undefined })); }}
+                    label="Понимаю риск: ключ ServerMind получит полный доступ root к этому серверу" />
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -263,9 +286,15 @@ export function AddServerWizard({ initialStep = 0, onStepChange }: { initialStep
               <dt className="text-text-muted">Адрес</dt><dd className="break-all text-right font-mono text-xs">{form.username}@{form.host}:{form.port}</dd>
               <dt className="text-text-muted">Отпечаток</dt><dd className="break-all text-right font-mono text-xs">{probe.fingerprint}</dd>
             </dl>
-            <InlineAlert tone="info" title="Права доступа">
-              Права только пользователя «{form.username}». Изменения на сервере выполняются лишь после вашего явного подтверждения плана.
-            </InlineAlert>
+            {form.username.trim() === "root" ? (
+              <InlineAlert tone="warning" title="Доступ root">
+                Ключ ServerMind даёт полный доступ root. ServerMind выполняет только фиксированные команды чтения; изменения на сервере — лишь после вашего явного подтверждения плана.
+              </InlineAlert>
+            ) : (
+              <InlineAlert tone="info" title="Права доступа">
+                Права только пользователя «{form.username}». Изменения на сервере выполняются лишь после вашего явного подтверждения плана.
+              </InlineAlert>
+            )}
             <CheckboxField checked={ownerConfirmed} onCheckedChange={(v) => setOwnerConfirmed(v === true)} label="Я владелец этого сервера и разрешаю ServerMind подключаться к нему" />
             {addError && <InlineAlert tone="danger" title="Не удалось добавить сервер">{addError}</InlineAlert>}
             <div className="flex flex-wrap justify-between gap-2">

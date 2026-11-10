@@ -40,7 +40,6 @@ export function checkPort(raw: string): { ok: true; port: number } | { ok: false
 
 export function checkUsername(raw: string): { ok: true } | { ok: false; reason: string } {
   const u = raw.trim();
-  if (u === "root") return { ok: false, reason: "Вход под root запрещён. Используйте отдельного пользователя servermind." };
   if (!/^[a-z_][a-z0-9_-]{0,31}$/.test(u)) return { ok: false, reason: "Имя пользователя: строчные латинские буквы, цифры, _ и -." };
   return { ok: true };
 }

@@ -28,6 +28,7 @@ class AddServerIn(CamelModel):
     port: int = 22
     username: str = Field(min_length=1, max_length=32)
     fingerprint: str = Field(min_length=10, max_length=80)
+    accept_root_risk: bool = False  # обязательное явное согласие, если username == "root"
 
 
 class ServiceOut(CamelModel):

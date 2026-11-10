@@ -26,10 +26,13 @@ class HostPolicyError(Exception):
         self.code = code
 
 
-def check_username(username: str) -> str:
+def check_username(username: str, *, accept_root_risk: bool = False) -> str:
+    """Вход под root разрешён ТОЛЬКО как осознанный выбор владельца сервера (accept_root_risk): ключ ServerMind получает полный доступ.
+    По умолчанию рекомендуется отдельный пользователь. Что именно выполняет ServerMind, от пользователя не зависит (фиксированный список)."""
     u = username.strip()
-    if u == "root":
-        raise HostPolicyError("Вход под root запрещён. Используйте отдельного пользователя servermind.", "username")
+    if u == "root" and not accept_root_risk:
+        raise HostPolicyError("Вход под root даёт ключу ServerMind полный доступ к серверу. Подтвердите риск явным согласием "
+                              "или используйте отдельного пользователя (рекомендуется).", "root_ack_required")
     if not _USERNAME_RE.fullmatch(u):
         raise HostPolicyError("Имя пользователя: строчные латинские буквы, цифры, _ и -.", "username")
     return u
