@@ -1,0 +1,22 @@
+[project]
+name = "servermind-api"
+version = "0.1.0"
+description = "ServerMind API (FastAPI): auth, tenants, servers, read-only SSH collection"
+requires-python = ">=3.12"
+# Версии зафиксированы в requirements.txt (pip freeze на момент установки).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 150
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S"]
+ignore = ["S101", "B008", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108", "S104"]
