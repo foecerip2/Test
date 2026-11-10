@@ -39,6 +39,7 @@ class Turn:
     tool_calls: list[ToolCall] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    response_items: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ProviderError(Exception):

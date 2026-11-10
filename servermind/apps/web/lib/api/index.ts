@@ -205,11 +205,6 @@ export const api = {
   billing: {
     balance: () => pick<Balance>((m) => m.balance(), () => request("GET", "/billing/balance")),
     ledger: () => pick<LedgerEntry[]>((m) => m.ledger(), () => request("GET", "/billing/usage")),
-    keys: () => pick<AiKey[]>((m) => m.keys(), () => request("GET", "/ai-keys")),
-    addKey: (input: { provider: Provider; key: string; model: string; skipValidation: boolean }) =>
-      pick<AiKey>((m) => m.addKey(input), () => request("POST", "/ai-keys", input)),
-    deleteKey: (id: string) =>
-      pick<{ ok: true }>((m) => m.deleteKey(id), () => request("DELETE", `/ai-keys/${encodeURIComponent(id)}`)),
     getMode: () => pick<{ mode: "byok" | "credits" }>((m) => m.getMode(), () => request("GET", "/billing/mode")),
     setMode: (mode: "byok" | "credits") =>
       pick<{ mode: "byok" | "credits" }>((m) => m.setMode(mode), () => request("PUT", "/billing/mode", { mode })),
@@ -227,6 +222,11 @@ export const api = {
   },
 
   admin: {
+    aiKeys: () => pick<AiKey[]>((m) => m.keys(), () => request("GET", "/admin/ai-keys")),
+    addAiKey: (input: { provider: Provider; key: string; model: string; skipValidation: boolean }) =>
+      pick<AiKey>((m) => m.addKey(input), () => request("POST", "/admin/ai-keys", input)),
+    deleteAiKey: (id: string) =>
+      pick<{ ok: true; revoked?: boolean }>((m) => m.deleteKey(id), () => request("DELETE", `/admin/ai-keys/${encodeURIComponent(id)}`)),
     invites: () => pick<Invite[]>((m) => m.invites(), () => request("GET", "/admin/invites")),
     createInvite: () => pick<Invite>((m) => m.createInvite(), () => request("POST", "/admin/invites")),
     audit: () => pick<AuditEvent[]>((m) => m.audit(), () => request("GET", "/admin/audit")),

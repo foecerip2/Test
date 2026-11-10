@@ -313,7 +313,7 @@ first_deploy() {
   dc --profile tools run --rm migrate
   log "запускаю API, web и Caddy"
   dc up -d
-  SMOKE_TIMEOUT=180 wait_smoke || die "сервисы не прошли проверку работоспособности (docker compose -p servermind ps / logs). Конфигурация сохранена в $SM_ROOT."
+  SMOKE_TIMEOUT="${INSTALL_SMOKE_TIMEOUT:-180}" wait_smoke "$API_REF" "$WEB_REF" || die "сервисы не прошли проверку работоспособности (docker compose -p servermind ps / logs). Конфигурация сохранена в $SM_ROOT."
   env_set "$SM_ROOT/state/deployed.env" API "$API_REF"
   env_set "$SM_ROOT/state/deployed.env" WEB "$WEB_REF"
   env_set "$SM_ROOT/state/deployed.env" COMMIT "${COMMIT:-unknown}"

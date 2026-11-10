@@ -18,13 +18,18 @@ import os
 import sys
 from dataclasses import asdict
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import consteq, decrypt, encrypt, hash_password
-from app.db.models import Membership, Organization, ServerCredential, User
+from app.db.models import AiKey, Membership, Organization, ServerCredential, User
 from app.db.session import _factory
+from app.modules.ai import chatgpt, chatgpt_auth
+from app.modules.ai.providers import ProviderError
+from app.modules.ai.router import MODEL_RE
+from app.modules.audit import service as audit
 from app.modules.servers import ssh
 from app.modules.servers.policy import HostPolicyError, check_username, resolve_target
 from app.modules.servers.router import _KEY_KIND, _aad
@@ -111,6 +116,43 @@ def cmd_check_host(a: argparse.Namespace) -> None:
     print(json.dumps(asdict(facts), ensure_ascii=False, indent=2))
 
 
+def cmd_chatgpt_import(a: argparse.Namespace) -> None:
+    if sys.stdin.isatty():
+        sys.exit("Передайте защищённый файл сессии через stdin по SSH.")
+    if not MODEL_RE.fullmatch(a.model):
+        sys.exit("Некорректное имя модели.")
+    try:
+        session = chatgpt_auth.ChatGPTSession.model_validate_json(sys.stdin.buffer.read(64 * 1024))
+        if a.model not in chatgpt_auth.listed_models(session.access_token, 15):
+            sys.exit("Эта модель недоступна в выбранном аккаунте ChatGPT.")
+    except ValidationError:
+        sys.exit("Неверный файл сессии ServerMind.")
+    except ProviderError as error:
+        sys.exit(error.message)
+
+    with _factory()() as db:
+        user, member = _user_org(db, a.email)
+        if member.role != "owner" or not user.is_active:
+            sys.exit("Подключение подписки доступно только активному владельцу.")
+        org_id = member.organization_id
+        db.execute(select(Organization.id).where(Organization.id == org_id).with_for_update()).scalar_one()
+        previous = db.scalar(select(AiKey).where(AiKey.organization_id == org_id, AiKey.provider == chatgpt.PROVIDER).with_for_update())
+        if previous is not None:
+            if previous.created_by is not None and previous.created_by != user.id:
+                sys.exit("Подписку уже подключил другой владелец пространства.")
+            db.delete(previous)
+            db.flush()
+        label = "ChatGPT"
+        if "@" in session.email:
+            local, _, domain = session.email.partition("@")
+            label = f"{local[:2]}•••@{domain}"[:32]
+        db.add(AiKey(organization_id=org_id, created_by=user.id, provider=chatgpt.PROVIDER, model=a.model,
+                     status="valid", masked=label, key_enc=chatgpt.encode(session, org_id)))
+        audit.record(db, "ai_account.connect", org_id=org_id, actor_id=user.id, target=chatgpt.PROVIDER, meta={"model": a.model})
+        db.commit()
+    print("Подписка ChatGPT подключена. Проверьте статус в «Админка → Подключение AI».")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="app.cli")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -132,6 +174,10 @@ def main() -> None:
     h.add_argument("--username", default="servermind")
     h.add_argument("--fingerprint", default=None)
     h.set_defaults(fn=cmd_check_host)
+    g = sub.add_parser("chatgpt-import", help="импортировать сессию Sign in with ChatGPT из stdin")
+    g.add_argument("--email", required=True)
+    g.add_argument("--model", required=True)
+    g.set_defaults(fn=cmd_chatgpt_import)
     a = p.parse_args()
     a.fn(a)
 

@@ -80,8 +80,7 @@ test("реальный стек: публичный ключ сервиса и �
 
   // ───── Фаза 3: BYOK через интерфейс (реальный API, проверка ключа пропущена — провайдера из песочницы не вызываем) ─────
   const KEY = "sk-STACKTESTKEY-0123456789abcdef";
-  await page.goto("/billing");
-  await page.getByRole("tab", { name: /Собственные ключи/ }).click();
+  await page.goto("/admin");
   await page.getByRole("listitem").filter({ hasText: "OpenAI" }).getByRole("button", { name: "Подключить" }).click();
   const dlg = page.getByRole("dialog");
   await dlg.getByLabel("API-ключ").fill(KEY);
@@ -128,7 +127,7 @@ test("реальный стек: публичный ключ сервиса и �
 
   // ───── Фаза 5: кредиты. Режим переключается на сервере; администратор платформы выдаёт кредиты; баланс и ledger — из PostgreSQL ─────
   await page.goto("/billing");
-  await expect(page.getByRole("tab", { name: /Собственные ключи/ })).toHaveAttribute("data-state", "active"); // реальный режим организации загружен: BYOK
+  await expect(page.getByRole("tab", { name: /Собственные подключения/ })).toHaveAttribute("data-state", "active"); // реальный режим организации загружен: BYOK
   await page.getByRole("tab", { name: /AI-кредиты/ }).click(); // PUT /billing/mode (на сервере заданы ключ платформы и цены)
   await expect(page.getByText("Кредиты закончились")).toBeVisible(); // баланс 0 — честно, без выдуманных чисел
   await expect(page.getByText("Режим кредитов не настроен")).toHaveCount(0);

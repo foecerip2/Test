@@ -175,9 +175,8 @@ test("деплой: секреты не попадают в хранилище/D
 
 test("BYOK: ключ не попадает в DOM и хранилище, показывается только маска", async ({ page }) => {
   const KEY = "sk-ant-TESTKEYTESTKEY99";
-  await page.goto("/billing");
+  await page.goto("/admin");
   await settle(page);
-  await page.getByRole("tab", { name: /Собственные ключи/ }).click();
   await page.getByRole("listitem").filter({ hasText: "Anthropic (Claude)" }).getByRole("button", { name: "Подключить" }).click();
   const dlg = page.getByRole("dialog");
   await expect(dlg.getByText("Проверка ключа обращается к провайдеру")).toBeVisible();

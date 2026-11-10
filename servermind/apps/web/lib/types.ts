@@ -149,7 +149,7 @@ export type Provider = "openai" | "anthropic" | "deepseek";
 
 export interface AiKey {
   id: string;
-  provider: Provider;
+  provider: Provider | "chatgpt";
   masked: string;
   model?: string;
   createdAt: string;

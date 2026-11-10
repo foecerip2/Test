@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.permissions import ApiError
 from app.core.security import SlidingWindowLimiter, decrypt, redact
 from app.db.models import ActionPlan, AiKey, AiUsage, Conversation, Message, Organization, Server, ServerMetricSample
+from app.modules.ai import chatgpt
 from app.modules.ai import context as ctxmod
 from app.modules.ai.prompts import SYSTEM_PROMPT, tool_defs
 from app.modules.ai.providers import PROVIDERS, ProviderError, ToolCall
@@ -64,9 +65,14 @@ def get_conversation(db: Session, ctx: AuthContext, server: Server) -> Conversat
 
 
 def _pick_key(db: Session, ctx: AuthContext) -> AiKey:
-    key = db.scalar(select(AiKey).where(AiKey.organization_id == ctx.org_id, AiKey.status != "invalid").order_by(AiKey.created_at.desc()).limit(1))
+    keys = select(AiKey).where(AiKey.organization_id == ctx.org_id)
+    if ctx.role == "owner":
+        subscription = db.scalar(keys.where(AiKey.provider == chatgpt.PROVIDER, AiKey.created_by == ctx.user.id))
+        if subscription is not None:
+            return subscription
+    key = db.scalar(keys.where(AiKey.provider != chatgpt.PROVIDER, AiKey.status != "invalid").order_by(AiKey.created_at.desc()).limit(1))
     if key is None:
-        raise ApiError(403, "no_key", "Не подключён ключ провайдера. Добавьте его в разделе «Биллинг».")
+        raise ApiError(403, "no_key", "Попросите владельца настроить подключение AI в админке.")
     return key
 
 
@@ -117,19 +123,22 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
     _guard(ctx)
     org = db.get(Organization, ctx.org_id)
     use_credits = org is not None and org.ai_mode == "credits"
-    key: AiKey | None = None
+    key_id: uuid.UUID | None = None
     if use_credits:  # ServerMind Credits: ключ платформы из окружения, списание по ledger
         if not s.platform_ai_configured:
             raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен на сервере (нет ключа платформы или цен). Используйте собственный ключ (BYOK).")
         provider_name, model_name, api_key = s.platform_ai_provider, s.platform_ai_model, s.platform_ai_key
     else:
         key = _pick_key(db, ctx)
+        key_id = key.id
         provider_name, model_name = key.provider, key.model
-        try:
-            api_key = decrypt(s.master_key_bytes, key.key_enc, key_aad(ctx.org_id, key.provider)).decode()
-        except Exception:  # noqa: BLE001 — любая ошибка расшифровки = конфигурация ключей
-            raise ApiError(500, "crypto", "Не удалось расшифровать ключ провайдера.") from None
-    provider = PROVIDERS[provider_name]
+        api_key = ""
+        if provider_name != chatgpt.PROVIDER:
+            try:
+                api_key = decrypt(s.master_key_bytes, key.key_enc, key_aad(ctx.org_id, key.provider)).decode()
+            except Exception:  # noqa: BLE001 — любая ошибка расшифровки = конфигурация ключей
+                raise ApiError(500, "crypto", "Не удалось расшифровать ключ провайдера.") from None
+    provider = chatgpt.ChatGPTPlan() if provider_name == chatgpt.PROVIDER else PROVIDERS[provider_name]
 
     conv = get_conversation(db, ctx, server)
     history = _history(db, conv)
@@ -159,6 +168,8 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
     tokens_in = tokens_out = 0
     try:
         for _ in range(s.ai_max_iterations):
+            if provider_name == chatgpt.PROVIDER and key_id is not None:
+                api_key = chatgpt.access_token(key_id, ctx.user.id, ctx.org_id, s.ai_timeout_seconds)
             turn = provider.chat(api_key=api_key, model=model_name, system=SYSTEM_PROMPT, messages=messages, tools=tools,
                                  max_tokens=s.ai_max_output_tokens, timeout=s.ai_timeout_seconds)
             tokens_in += turn.input_tokens
@@ -168,7 +179,7 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
             if not turn.tool_calls:
                 final = turn.text
                 break
-            messages.append({"role": "assistant", "content": turn.text, "tool_calls": turn.tool_calls})
+            messages.append({"role": "assistant", "content": turn.text, "tool_calls": turn.tool_calls, "response_items": turn.response_items})
             for tc in turn.tool_calls:
                 result, ok, summary, obs, plan_info = _handle_tool(db, ctx, server, conv, tc, samples, latest, proposal is not None)
                 if plan_info:
@@ -185,12 +196,12 @@ def run_chat(db: Session, ctx: AuthContext, server: Server, text: str) -> tuple[
         status, code = _ERR_STATUS.get(e.code, (502, "ai_error"))
         if use_credits and e.code == "auth":  # проблема ключа ПЛАТФОРМЫ — это не ошибка пользователя
             raise ApiError(502, "ai_unavailable", "AI временно недоступен (проблема на стороне платформы). Кредиты не списаны.") from None
-        if e.code == "auth" and key is not None:
-            row = db.get(AiKey, key.id)
+        if e.code == "auth" and key_id is not None:
+            row = db.get(AiKey, key_id)
             if row is not None:
                 row.status = "invalid"
                 db.commit()
-        raise ApiError(status, code, e.message) from None
+        raise ApiError(status, "chatgpt_reconnect" if provider_name == chatgpt.PROVIDER and e.code == "auth" else code, e.message) from None
     except Exception:
         db.rollback()
         if reservation_id is not None:

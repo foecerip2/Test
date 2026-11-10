@@ -6,7 +6,7 @@
 ```
 git push → GitHub Actions: тесты → образы в GHCR (sha-<commit>) → [одобрение] → тег stable
                                                                               │ (VPS опрашивает раз в минуту)
-VPS: servermind-update.timer → новый digest? → бэкап БД → миграции → запуск по digest → smoke → успех / откат
+VPS: servermind-update.timer → новый digest? → бэкап БД → миграции → запуск → сверка образов и smoke → успех / откат
 ```
 В GitHub **нет** ни SSH-ключа, ни доступа к вашему серверу.
 
@@ -60,9 +60,12 @@ sudo bash install.sh --image-repo ghcr.io/<owner>/servermind --domain app.exampl
 | Обновить сейчас | `sudo systemctl start servermind-update.service` |
 | Логи сервисов | `docker compose -p servermind --project-directory /opt/servermind/compose logs -f --tail 100` |
 
-Значения `result` в `last-update.json`: `ok`, `rolled_back` (новая версия не прошла проверку, возвращена прежняя), `rollback_failed` (**нужно ручное вмешательство**), `migration_failed`, `backup_failed`, `bad_compose`, `bad_bundle`, `skipped_disk` (< 3 ГБ свободно).
+Значения `result` в `last-update.json`: `ok`, `rolled_back` (новая версия не прошла проверку, возвращена прежняя), `rollback_failed` (**нужно ручное вмешательство**), `migration_failed`, `backup_failed`, `snapshot_failed`, `deploy_failed`, `bad_compose`, `bad_bundle`, `skipped_disk` (< 3 ГБ свободно).
 
 ## 5. Откат и восстановление
+
+- При сбое запуска Compose или несовпадении фактических образов API и web с ожидаемыми digest релиз не считается установленным. Во время отката те же проверки применяются к предыдущим образам.
+- Уже установленный VPS впервые запускает обновление старой копией `/opt/servermind/bin/update.sh`. Чтобы исправленная проверка действовала и на первом обновлении, поставьте таймер на паузу, дождитесь завершения текущего запуска и установите проверенную копию `servermind/bootstrap/update.sh` из нужного коммита в `/opt/servermind/bin/update.sh` с правами `0755`. Затем запустите таймер и проверьте статус по командам выше.
 - Автоматически: при сбое smoke-тестов возвращаются прежние образы и конфигурация; сломанный релиз пропускается, пока не выйдет новый.
 - Вручную назад на конкретный релиз: поставьте паузу, в `/opt/servermind/compose/.env` укажите нужные `SERVERMIND_API_IMAGE` / `SERVERMIND_WEB_IMAGE` (digest из `deployed.env` или GHCR), `docker compose … up -d`.
 - **Схема БД не откатывается вместе с образами.** Восстановление данных: `pg_restore` из `/opt/servermind/backups/db-*.dump` (остановите `api` на время восстановления).

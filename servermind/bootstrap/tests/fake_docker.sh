@@ -14,7 +14,9 @@ case "${1:-}" in
     exit 0 ;;
   image)
     case "${2:-}" in
-      inspect) echo "${FAKE_API_DIGEST:-}"; exit 0 ;;
+      inspect)
+        if [[ "$*" == *'{{.Id}}'* ]]; then echo "${*: -1}"; else echo "${FAKE_API_DIGEST:-}"; fi
+        exit 0 ;;
       prune) exit 0 ;;
     esac ;;
   create) fail create && exit 1; echo "fakecid"; exit 0 ;;
@@ -22,7 +24,10 @@ case "${1:-}" in
     fail cp && exit 1
     dest="${*: -1}"; mkdir -p "$dest"; cp -r "${FAKE_BUNDLE:?}/." "$dest/"; exit 0 ;;
   rm) exit 0 ;;
-  inspect) echo true; exit 0 ;;
+  inspect)
+    cid="${*: -1}"
+    if [[ "$cid" == fakecaddy ]]; then echo true; else cat "$FAKE_LOG.$cid"; fi
+    exit $? ;;
   compose)
     shift
     projdir=""
@@ -54,8 +59,17 @@ case "${1:-}" in
             exit 0 ;;
         esac ;;
       run) fail migrate && exit 1; exit 0 ;;
-      up) exit 0 ;;
-      ps) echo "fakecaddy"; exit 0 ;;
+      up)
+        api="$(sed -n 's/^SERVERMIND_API_IMAGE=//p' "$projdir/.env")"
+        web="$(sed -n 's/^SERVERMIND_WEB_IMAGE=//p' "$projdir/.env")"
+        if [[ "$api" == "${FAKE_BAD_API:-}" ]]; then
+          fail up && exit 42
+          if fail stale_web; then web="${FAKE_OLD_WEB:?}"; fi
+        fi
+        printf '%s true\n' "$api" > "$FAKE_LOG.fakeapi"
+        printf '%s true\n' "$web" > "$FAKE_LOG.fakeweb"
+        exit 0 ;;
+      ps) echo "fake${*: -1}"; exit 0 ;;
     esac ;;
 esac
 exit 0
