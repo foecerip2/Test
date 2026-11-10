@@ -1,0 +1,149 @@
+#!/usr/bin/python3
+"""servermind-op — обёртка ServerMind на ЦЕЛЕВОМ сервере (ADR 0004, вариант A).
+
+Ставится ВЛАДЕЛЬЦЕМ сервера вручную (см. docs/operations/target-wrapper.md), запускается через sudo пользователем ServerMind:
+    sudo -n /usr/local/sbin/servermind-op <операция> '<параметры-JSON>'
+
+Принципы (не обсуждаются):
+- только две операции: service.restart и http.healthcheck; любое другое имя → отказ;
+- параметры проверяются заново (те же регулярные выражения, что в каталоге ServerMind), лишние поля запрещены;
+- никакой оболочки: subprocess с массивом аргументов, shell=False; JSON не подставляется в строки команд;
+- service.restart — только для служб из белого списка владельца /etc/servermind/managed-services (нет файла → отказ);
+- http.healthcheck — только http://127.0.0.1:<порт>/…; редиректы не выполняются;
+- ответ — одна строка JSON {"ok": bool, "op": ..., "detail": ...}; код выхода 0 только при ok=true.
+Скрипт намеренно маленький: его можно прочитать целиком до установки. Версия и хеш: `servermind-op --version`."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+VERSION = "1"
+ALLOWLIST_PATH = "/etc/servermind/managed-services"
+MAX_ARG_BYTES = 2000
+UNIT_RE = re.compile(r"^[a-z0-9][a-z0-9@._-]{0,63}$")
+URL_RE = re.compile(r"^http://127\.0\.0\.1:\d{2,5}(/[A-Za-z0-9._~\-/]*)?$")
+
+
+class Refuse(Exception):
+    pass
+
+
+def load_allowlist(path: str) -> set[str]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        raise Refuse("белый список служб не найден (/etc/servermind/managed-services): владелец должен создать его") from None
+    out = set()
+    for ln in lines:
+        ln = ln.split("#", 1)[0].strip()
+        if ln:
+            out.add(ln.removesuffix(".service"))
+    return out
+
+
+def _exact(params: object, keys: set[str], required: set[str]) -> dict:
+    if not isinstance(params, dict):
+        raise Refuse("параметры должны быть JSON-объектом")
+    extra = set(params) - keys
+    if extra:
+        raise Refuse("недопустимые поля: " + ", ".join(sorted(str(k)[:20] for k in extra)))
+    missing = required - set(params)
+    if missing:
+        raise Refuse("не хватает полей: " + ", ".join(sorted(missing)))
+    return params
+
+
+def _unit_name(unit: str) -> str:
+    return unit if "." in unit else unit + ".service"
+
+
+def op_service_restart(params: object, *, run=subprocess.run, allowlist: str = ALLOWLIST_PATH, sleep=time.sleep) -> dict:
+    p = _exact(params, {"unit"}, {"unit"})
+    unit = p["unit"]
+    if not isinstance(unit, str) or not UNIT_RE.fullmatch(unit):
+        raise Refuse("недопустимое имя службы")
+    if unit.removesuffix(".service") not in load_allowlist(allowlist):
+        raise Refuse("служба не входит в белый список владельца")
+    name = _unit_name(unit)
+    if run(["systemctl", "cat", name], capture_output=True, text=True, timeout=15, shell=False).returncode != 0:
+        raise Refuse("служба не найдена на сервере")
+    r = run(["systemctl", "restart", name], capture_output=True, text=True, timeout=60, shell=False)
+    if r.returncode != 0:
+        return {"ok": False, "detail": "systemctl restart завершился с ошибкой"}
+    for _ in range(10):  # служба может подниматься не мгновенно
+        a = run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=15, shell=False)
+        if a.stdout.strip() == "active":
+            return {"ok": True, "detail": f"{name}: active"}
+        sleep(1)
+    return {"ok": False, "detail": f"{name}: не стала active после перезапуска"}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):  # редирект = ответ 3xx как есть
+        return None
+
+
+def op_http_healthcheck(params: object, *, opener=None) -> dict:
+    p = _exact(params, {"url", "expect_status", "timeout_s"}, {"url"})
+    url = p["url"]
+    expect = p.get("expect_status", 200)
+    timeout = p.get("timeout_s", 10)
+    if not isinstance(url, str) or not URL_RE.fullmatch(url):
+        raise Refuse("разрешены только адреса http://127.0.0.1:<порт>/…")
+    if not (isinstance(expect, int) and not isinstance(expect, bool) and 100 <= expect <= 599):
+        raise Refuse("expect_status: целое 100–599")
+    if not (isinstance(timeout, int) and not isinstance(timeout, bool) and 1 <= timeout <= 30):
+        raise Refuse("timeout_s: целое 1–30")
+    opener = opener or urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(url, timeout=timeout) as resp:
+            status = resp.status
+    except urllib.error.HTTPError as e:
+        status = e.code
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return {"ok": False, "detail": "нет ответа"}
+    return {"ok": status == expect, "detail": f"HTTP {status}, ожидалось {expect}"}
+
+
+OPS = {"service.restart": op_service_restart, "http.healthcheck": op_http_healthcheck}
+
+
+def main(argv: list[str], *, require_root: bool = True, **deps) -> int:
+    if len(argv) == 2 and argv[1] == "--version":
+        print(f"servermind-op {VERSION}")
+        return 0
+    try:
+        if require_root and os.geteuid() != 0:
+            raise Refuse("запускать только через sudo (от root)")
+        if len(argv) != 3:
+            raise Refuse("использование: servermind-op <операция> <параметры-JSON>")
+        op, raw = argv[1], argv[2]
+        if op not in OPS:
+            raise Refuse("неизвестная операция")
+        if len(raw.encode()) > MAX_ARG_BYTES:
+            raise Refuse("слишком длинные параметры")
+        try:
+            params = json.loads(raw)
+        except ValueError:
+            raise Refuse("параметры — не JSON") from None
+        res = OPS[op](params, **deps)
+    except Refuse as e:
+        print(json.dumps({"ok": False, "op": argv[1][:40] if len(argv) > 1 else "", "detail": f"отказ: {e}"}, ensure_ascii=False))
+        return 2
+    except Exception:  # noqa: BLE001 — внутренняя ошибка не раскрывает подробностей
+        print(json.dumps({"ok": False, "op": argv[1][:40], "detail": "внутренняя ошибка обёртки"}, ensure_ascii=False))
+        return 3
+    print(json.dumps({"ok": res["ok"], "op": op, "detail": res["detail"]}, ensure_ascii=False))
+    return 0 if res["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

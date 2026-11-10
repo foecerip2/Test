@@ -187,8 +187,8 @@ def test_db_forbids_real_execution_mode_and_rewriting_the_journal(client, db, ow
     plan, _ = make_plan(client, db, owner, h, fake_provider, [RESTART])
     jid = rehearse(client, h, plan).json()["id"]
     work(db)
-    with pytest.raises(IntegrityError):  # режим «execute» невозможно создать даже прямой записью в БД
-        db.execute(text("UPDATE jobs SET mode='execute' WHERE id = :i"), {"i": jid})
+    with pytest.raises(IntegrityError):  # режим, которого нет в списке (rehearsal/execute), невозможно создать даже прямой записью в БД
+        db.execute(text("UPDATE jobs SET mode='shell' WHERE id = :i"), {"i": jid})
         db.commit()
     db.rollback()
     with pytest.raises(DBAPIError):

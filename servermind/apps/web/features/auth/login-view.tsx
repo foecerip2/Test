@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, KeyRound, ShieldCheck } from "lucide-react";
@@ -124,7 +125,7 @@ export function LoginView() {
                 {formError && <InlineAlert tone="danger" title="Не удалось войти">{formError}</InlineAlert>}
                 {process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" && <InlineAlert tone="warning" title="Демо-вход">Проверки нет: подойдёт любой email и пароль от 8 символов, затем 6 цифр кода. Реальная аутентификация — Фаза 2.</InlineAlert>}
                 <Button type="submit" className="w-full" loading={busy}>Войти <ArrowRight aria-hidden /></Button>
-                <p className="text-center text-sm text-text-muted">Нет приглашения? Обратитесь к владельцу пространства.</p>
+                <p className="text-center text-sm text-text-muted">Есть код приглашения? <Link href="/register" className="text-primary underline">Зарегистрироваться</Link></p>
               </form>
             ) : stage === "setup" && totp ? (
               <form onSubmit={submitEnable} noValidate className="space-y-5" aria-labelledby="setup-title">

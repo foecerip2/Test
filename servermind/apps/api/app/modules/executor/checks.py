@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import utcnow
 from app.core.config import Settings
-from app.db.models import ActionPlan, Approval, Membership, Server, ServerMetricSample
+from app.db.models import ActionPlan, Approval, Membership, Organization, Server, ServerMetricSample
+from app.modules.admin import flags
 from app.modules.policy.engine import PolicyViolation, validate_proposal
 from app.modules.policy.plan_hash import compute_hash, format_expires
 
@@ -78,3 +79,19 @@ def preflight(db: Session, plan: ActionPlan, settings: Settings) -> list[Check]:
     else:
         out.append(Check("policy", False, "Пропущено: сервер не готов."))
     return out
+
+
+def switch_checks(db: Session, settings: Settings, plan: ActionPlan) -> list[Check]:
+    """Три выключателя реального исполнения (все по умолчанию ВЫКЛ) + kill switch. Состояние читается заново из БД."""
+    org = db.get(Organization, plan.organization_id, populate_existing=True)
+    server = db.get(Server, plan.server_id, populate_existing=True)
+    killed = flags.kill_engaged(db)
+    return [
+        Check("config_switch", bool(settings.execution_enabled),
+              "Исполнение разрешено конфигурацией сервера." if settings.execution_enabled else "Исполнение выключено конфигурацией сервера (EXECUTION_ENABLED=false)."),
+        Check("kill_switch", not killed, "Kill switch не нажат." if not killed else "Исполнение остановлено администратором платформы (kill switch)."),
+        Check("org_switch", bool(org and org.execution_enabled),
+              "Исполнение включено для организации." if org and org.execution_enabled else "Исполнение не включено для организации (включает владелец)."),
+        Check("server_switch", bool(server and server.execution_enabled),
+              "Исполнение включено для сервера." if server and server.execution_enabled else "Исполнение не включено для этого сервера (включает владелец после установки обёртки)."),
+    ]

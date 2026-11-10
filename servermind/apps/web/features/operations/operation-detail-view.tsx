@@ -33,6 +33,7 @@ export function OperationDetailView({ id }: { id: string }) {
 
   const o = op.state.data;
   const rehearsal = o.mode === "rehearsal";
+  const real = o.mode === "execute";
   const active = o.status === "running" || o.status === "queued" || o.status === "validating" || o.status === "waiting_approval";
 
   const cancel = async () => {
@@ -54,7 +55,10 @@ export function OperationDetailView({ id }: { id: string }) {
             {o.status === "waiting_approval" && o.planId && (
               <Link href={`/operations/${o.id}/approve`} className={buttonVariants()}><ShieldQuestion aria-hidden /> Проверить и подтвердить</Link>
             )}
-            {active && !rehearsal && <Button variant="secondary" onClick={cancel} loading={cancelling}><Ban aria-hidden /> Отменить</Button>}
+            {rehearsal && o.status === "succeeded" && o.planId && (
+              <Link href={`/operations/op_${o.planId}/approve`} className={buttonVariants({ variant: "secondary" })}>К исполнению</Link>
+            )}
+            {active && !rehearsal && !real && <Button variant="secondary" onClick={cancel} loading={cancelling}><Ban aria-hidden /> Отменить</Button>}
           </>
         }
       />
@@ -65,7 +69,12 @@ export function OperationDetailView({ id }: { id: string }) {
           {o.status === "blocked" && " Репетиция остановлена проверкой: причина указана в журнале ниже."}
         </InlineAlert>
       )}
-      {(o.status === "failed" || o.status === "cancelled") && !rehearsal && (
+      {real && (
+        <InlineAlert tone="warning" title="Реальное исполнение" className="mb-5">
+          Команды отправлялись на сервер обёрткой servermind-op. Откат автоматически не выполняется. {o.status === "failed" && "Задание остановлено: проверьте состояние сервера и журнал ниже."}
+        </InlineAlert>
+      )}
+      {(o.status === "failed" || o.status === "cancelled") && !rehearsal && !real && (
         <InlineAlert tone="warning" title="Откат не выполнялся автоматически" className="mb-5">
           Уже выполненные шаги не отменяются. Проверьте состояние сервера и журнал ниже; при необходимости подготовьте новый план.
         </InlineAlert>

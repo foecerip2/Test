@@ -125,6 +125,12 @@ test("реальный стек: публичный ключ сервиса и �
   const ops = await page.locator("body").innerText();
   expect(ops).not.toMatch(/Демо-данные|demo-/i);
 
+  // ───── Реальное исполнение ВЫКЛЮЧЕНО по умолчанию: карточка честно показывает выключатели, кнопка недоступна ─────
+  await page.goto(`/operations/op_${planId}/approve`);
+  await expect(page.getByText("Реальное исполнение на сервере")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Выключатели исполнения" })).toContainText("выключено");
+  await expect(page.getByRole("button", { name: "Выполнить на сервере…" })).toBeDisabled();
+
   // ───── Фаза 5: кредиты. Режим переключается на сервере; администратор платформы выдаёт кредиты; баланс и ledger — из PostgreSQL ─────
   await page.goto("/billing");
   await expect(page.getByRole("tab", { name: /Собственные подключения/ })).toHaveAttribute("data-state", "active"); // реальный режим организации загружен: BYOK
@@ -166,6 +172,23 @@ test("реальный стек: публичный ключ сервиса и �
   await expect(row).toContainText("вход 7 / выход 9");
   expect(await page.content()).not.toContain("STACKDBKEY"); // ключ не попадает в страницу
   expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("STACKDBKEY");
+
+  // ───── Админка: флаги, kill switch, пользователи и приглашения — из реальной БД, без демо-данных ─────
+  await expect(page.getByText("AI-чат", { exact: true })).toBeVisible();
+  await expect(page.getByText("Режим кредитов", { exact: true })).toBeVisible();
+  await expect(page.getByText("Исполнение ОСТАНОВЛЕНО")).toBeVisible(); // честно: EXECUTION_ENABLED=false в конфигурации сервера
+  await expect(page.getByRole("list", { name: "Пользователи" })).toContainText(EMAIL);
+  await page.getByRole("button", { name: "Создать код" }).click();
+  await expect(page.getByText("Код создан")).toBeVisible();
+  await expect(page.getByText("не использован").first()).toBeVisible();
+
+  // ───── Регистрация по коду: неверный код → общее сообщение (не раскрываем, что именно не так) ─────
+  await page.goto("/register");
+  await page.getByLabel("Код приглашения").fill("wrong-code-0123456789");
+  await page.getByLabel("Email").fill("stranger@example.com");
+  await page.getByLabel("Пароль", { exact: true }).fill("a-long-enough-password");
+  await page.getByRole("button", { name: "Создать аккаунт" }).click();
+  await expect(page.getByText("Проверьте код приглашения и данные")).toBeVisible();
 });
 
 test("реальный стек: выход закрывает доступ", async ({ page }) => {

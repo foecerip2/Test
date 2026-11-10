@@ -56,10 +56,12 @@ def _clean(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     with get_engine().begin() as c:
         c.execute(text(
             "TRUNCATE audit_events, login_attempts, server_metric_samples, server_credentials, servers, sessions, "
-            "memberships, users, organizations, ai_keys, conversations, messages, action_plans, approvals, ai_usage, jobs, job_steps, wallets, ledger_reservations, ledger_entries, platform_models "
+            "memberships, users, organizations, ai_keys, conversations, messages, action_plans, approvals, ai_usage, jobs, job_steps, wallets, ledger_reservations, ledger_entries, platform_models, feature_flags, invites "
             "RESTART IDENTITY CASCADE"))
     from app.modules.ai import service as ai_service  # noqa: PLC0415
     ai_service.reset_limiter()
+    from app.modules.admin import registration  # noqa: PLC0415
+    registration.reset_limiter()
     yield
     get_settings.cache_clear()
 
