@@ -34,7 +34,18 @@ class Settings(BaseSettings):
     ssh_ops_per_minute: int = 10
     output_cap_bytes: int = 64 * 1024
 
-    execution_enabled: bool = False  # kill switch для мутаций (Фаза 4); в Фазе 2 мутаций нет
+    execution_enabled: bool = False  # kill switch для мутаций (Фаза 4); в Фазах 2–3 ничего не исполняется
+
+    # --- Фаза 3: AI и планы ---
+    plan_ttl_minutes: int = 15
+    managed_services: list[str] = ["nginx"]  # службы, которые разрешено перезапускать через service.restart
+    allowed_image_prefixes: list[str] = ["registry.servermind.example/"]  # реестры образов для app.deploy_compose
+    ai_requests_per_hour: int = 60
+    ai_history_messages: int = 12
+    ai_max_context_chars: int = 12000
+    ai_max_output_tokens: int = 1024
+    ai_timeout_seconds: int = 60
+    ai_max_iterations: int = 4
 
     @field_validator("encryption_master_key")
     @classmethod

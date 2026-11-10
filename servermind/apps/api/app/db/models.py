@@ -42,6 +42,7 @@ class Organization(Base):
     __tablename__ = "organizations"
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(120))
+    ai_mode: Mapped[str] = mapped_column(String(10), default="byok", server_default="byok")
     created_at: Mapped[dt.datetime] = _now()
 
 
@@ -167,4 +168,93 @@ class AuditEvent(Base):
     target: Mapped[str] = mapped_column(String(255), default="")
     meta: Mapped[Any] = mapped_column(JSONB, default=dict)
     ip: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[dt.datetime] = _now()
+
+
+# ───────────────────────── Фаза 3: AI, планы, подтверждения ─────────────────────────
+class AiKey(Base):
+    """BYOK-ключ провайдера. Хранится только зашифрованным (AEAD); в API и UI — только маска."""
+
+    __tablename__ = "ai_keys"
+    __table_args__ = (UniqueConstraint("organization_id", "provider", name="uq_ai_key_org_provider"),
+                      CheckConstraint("provider in ('openai','anthropic','deepseek')", name="ck_ai_provider"),
+                      CheckConstraint("status in ('valid','unchecked','invalid')", name="ck_ai_key_status"))
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(64))
+    key_enc: Mapped[bytes] = mapped_column(LargeBinary)
+    masked: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(10), default="unchecked")
+    created_at: Mapped[dt.datetime] = _now()
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    __table_args__ = (UniqueConstraint("organization_id", "server_id", "user_id", name="uq_conversation_scope"),)
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    server_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[dt.datetime] = _now()
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    __table_args__ = (Index("ix_messages_conv_time", "conversation_id", "created_at"),
+                      CheckConstraint("role in ('user','assistant')", name="ck_message_role"))
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
+    role: Mapped[str] = mapped_column(String(10))
+    content: Mapped[str] = mapped_column(Text)
+    meta: Mapped[Any] = mapped_column(JSONB, default=dict)  # tools / observed / proposal; без секретов
+    created_at: Mapped[dt.datetime] = _now()
+
+
+class ActionPlan(Base):
+    __tablename__ = "action_plans"
+    __table_args__ = (CheckConstraint("status in ('waiting_approval','approved','rejected','expired')", name="ck_plan_status"),)
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    server_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("servers.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    title: Mapped[str] = mapped_column(String(160))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    steps: Mapped[Any] = mapped_column(JSONB)
+    downtime: Mapped[str] = mapped_column(String(255), default="")
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    canonical_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(20), default="waiting_approval")
+    created_at: Mapped[dt.datetime] = _now()
+
+
+class Approval(Base):
+    """Подтверждение привязано к (plan, revision, hash, actor). Append-only (триггер)."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (UniqueConstraint("plan_id", "revision", name="uq_approval_plan_revision"),)
+    id: Mapped[uuid.UUID] = _pk()
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("action_plans.id", ondelete="CASCADE"))
+    revision: Mapped[int] = mapped_column(Integer)
+    canonical_hash: Mapped[str] = mapped_column(String(64))
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[dt.datetime] = _now()
+
+
+class AiUsage(Base):
+    """Учёт токенов (BYOK: расходы оплачивает пользователь). Денежный ledger — Фаза 5."""
+
+    __tablename__ = "ai_usage"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(64))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[dt.datetime] = _now()

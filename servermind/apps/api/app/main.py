@@ -8,7 +8,9 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.permissions import ApiError
 from app.db.session import get_engine
+from app.modules.ai.router import router as ai_router
 from app.modules.identity.router import router as identity_router
+from app.modules.plans.router import router as plans_router
 from app.modules.servers.router import router as servers_router
 
 
@@ -51,6 +53,8 @@ def create_app() -> FastAPI:
 
     app.include_router(identity_router, prefix="/api/v1")
     app.include_router(servers_router, prefix="/api/v1")
+    app.include_router(ai_router, prefix="/api/v1")
+    app.include_router(plans_router, prefix="/api/v1")
     return app
 
 
