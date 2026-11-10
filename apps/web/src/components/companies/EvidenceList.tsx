@@ -9,7 +9,7 @@ function FactItem({ f }: { f: Fact }) {
       <p style={{ fontWeight: 600 }}>{f.text}</p>
       {f.evidenceExcerpt && <p className="muted small" style={{ marginTop: 4 }}>Выдержка: «{f.evidenceExcerpt}»</p>}
       <p className="muted small" style={{ marginTop: 4 }}>
-        {f.evidenceUrl && /^https?:\/\//i.test(f.evidenceUrl) ? <a href={f.evidenceUrl} target="_blank" rel="noopener noreferrer nofollow">Источник</a> : "Источник не указан"}
+        {f.evidenceUrl && /^https?:\/\//i.test(f.evidenceUrl) ? <a href={f.evidenceUrl} target="_blank" rel="noopener noreferrer nofollow">Источник<span className="sr-only">: {f.text} (откроется в новой вкладке)</span></a> : "Источник не указан"}
         {" · "}проверено {fmtDay(f.observedAt)}{" · "}уверенность {Math.round(f.confidence * 100)}%
       </p>
     </li>

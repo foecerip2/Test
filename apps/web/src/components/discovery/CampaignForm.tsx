@@ -36,7 +36,13 @@ export function CampaignForm({ sources }: { sources: SourceConfig[] }) {
     if (!Number.isInteger(lim) || lim < 1 || lim > 500) er.limit = "Лимит — целое число от 1 до 500";
     if (!sourceId) er.source = "Нет доступного источника";
     setErrors(er);
-    if (Object.keys(er).length) return;
+    const firstBad = Object.keys(er)[0];
+    if (firstBad) {
+      // Переносим фокус к первому полю с ошибкой (WCAG 3.3.1).
+      const target = ({ name: "c-name", regions: "c-regions-all", cats: "c-cats-first", limit: "c-limit", source: "c-source" } as Record<string, string>)[firstBad];
+      setTimeout(() => document.getElementById(target ?? "")?.focus(), 0);
+      return;
+    }
     setBusy(true);
     try {
       await getApi().campaigns.create({ name: name.trim(), regions, categories: cats, sourceId, perDayLimit: lim });
@@ -51,13 +57,13 @@ export function CampaignForm({ sources }: { sources: SourceConfig[] }) {
     <Panel title="Новая кампания" subtitle="Параметры задания для фонового обработчика" action={<Icon name="filter" />}>
       <form className="panel-body" onSubmit={submit} noValidate>
         <Field label="Название" htmlFor="c-name" error={errors.name}>
-          <input id="c-name" className="input" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!errors.name} aria-describedby={errors.name ? "c-name-err" : undefined} maxLength={80} />
+          <input id="c-name" className="input" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!errors.name} maxLength={80} />
         </Field>
 
         <fieldset className="field" style={{ border: 0, padding: 0, margin: "0 0 18px" }} aria-describedby={errors.regions ? "regions-err" : undefined}>
           <legend className="field-label">Регионы</legend>
           <div className="choice-row" style={{ marginBottom: 10 }}>
-            <button type="button" className="btn btn-sm" onClick={() => setRegions(allSelected ? [] : [...REGIONS])} aria-pressed={allSelected}>
+            <button type="button" id="c-regions-all" className="btn btn-sm" onClick={() => setRegions(allSelected ? [] : [...REGIONS])}>
               {allSelected ? "Снять выбор" : "Вся Россия (все города из списка)"}
             </button>
           </div>
@@ -73,17 +79,17 @@ export function CampaignForm({ sources }: { sources: SourceConfig[] }) {
           {errors.regions && <p className="field-error" id="regions-err" role="alert">{errors.regions}</p>}
         </fieldset>
 
-        <fieldset className="field" style={{ border: 0, padding: 0, margin: "0 0 18px" }}>
+        <fieldset className="field" style={{ border: 0, padding: 0, margin: "0 0 18px" }} aria-describedby={errors.cats ? "cats-err" : undefined}>
           <legend className="field-label">Категории</legend>
           <div className="choice-row">
-            {CATEGORIES.map((c) => (
+            {CATEGORIES.map((c, i) => (
               <label key={c} className={m.check}>
-                <input type="checkbox" checked={cats.includes(c)} onChange={() => toggle(cats, c, setCats)} />
+                <input type="checkbox" id={i === 0 ? "c-cats-first" : undefined} checked={cats.includes(c)} onChange={() => toggle(cats, c, setCats)} />
                 {c}
               </label>
             ))}
           </div>
-          {errors.cats && <p className="field-error" role="alert">{errors.cats}</p>}
+          {errors.cats && <p className="field-error" id="cats-err" role="alert">{errors.cats}</p>}
         </fieldset>
 
         <Field label="Источник данных" htmlFor="c-source" error={errors.source}>

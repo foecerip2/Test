@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { Modal } from "../Modal";
 import { Notice, StatusTag } from "../ui";
@@ -32,6 +32,14 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(false);
   const [result, setResult] = useState<{ added: number; skipped: number } | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const prevStep = useRef(step);
+  // При смене шага прежний сфокусированный элемент исчезает — переносим фокус на заголовок диалога.
+  useEffect(() => {
+    if (prevStep.current === step) return;
+    prevStep.current = step;
+    box.current?.closest<HTMLElement>('[role="dialog"]')?.querySelector<HTMLElement>("h2")?.focus();
+  }, [step]);
 
   async function load(file: File | undefined) {
     setError(null); setPreview(null);
@@ -71,7 +79,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="Импорт компаний из CSV" onClose={onClose}>
-      <div className={m.wide} style={{ width: "100%" }}>
+      <div className={m.wide} style={{ width: "100%" }} ref={box}>
         {step === "file" && (
           <>
             <p>Колонки: название и город — обязательны; категория, сайт, ИНН — по желанию. Разделитель — запятая, точка с запятой или табуляция.</p>
@@ -98,7 +106,7 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
               <div><strong>{cand}</strong>возможные дубли</div>
               <div><strong>{bad}</strong>с ошибками</div>
             </div>
-            <div className={`table-wrap ${m.tbl}`}>
+            <div className={`table-wrap ${m.tbl}`} tabIndex={0} role="region" aria-label="Предпросмотр строк файла">
               <table className="data-table" style={{ minWidth: 560 }}>
                 <caption className="sr-only">Первые 20 строк файла</caption>
                 <thead><tr><th scope="col">Строка</th><th scope="col">Название</th><th scope="col">Город</th><th scope="col">Сайт</th><th scope="col">Отметка</th></tr></thead>

@@ -75,9 +75,9 @@ export function ConsentPanel({ contacts }: { contacts: Contact[] }) {
             {!k.platformAllowed && <p className="muted small" style={{ marginTop: 4 }}>Канал не поддерживает автоматическую отправку: только ручной контакт.</p>}
             <div className="row" style={{ marginTop: 10 }}>
               <button className="btn btn-sm" disabled={k.suppressed || k.consent.state === "verified" || !k.platformAllowed} onClick={() => setRec(k)}
-                title={k.suppressed ? "Адрес в списке подавления" : !k.platformAllowed ? "Канал без автоматической отправки" : k.consent.state === "verified" ? "Согласие уже подтверждено" : undefined}>Записать согласие</button>
+                title={k.suppressed ? "Адрес в списке подавления" : !k.platformAllowed ? "Канал без автоматической отправки" : k.consent.state === "verified" ? "Согласие уже подтверждено" : undefined}>Записать согласие<span className="sr-only">: {CHANNEL[k.channel]} {k.valueMasked}</span></button>
               <button className="btn btn-sm btn-danger" disabled={k.consent.state !== "verified" || k.suppressed} onClick={() => setWd(k)}
-                title={k.consent.state !== "verified" ? "Нечего отзывать: согласие не подтверждено" : undefined}>Отозвать согласие</button>
+                title={k.consent.state !== "verified" ? "Нечего отзывать: согласие не подтверждено" : undefined}>Отозвать согласие<span className="sr-only">: {CHANNEL[k.channel]} {k.valueMasked}</span></button>
             </div>
           </li>
         ))}
