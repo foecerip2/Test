@@ -18,7 +18,7 @@ concurrency:
 # ВАЖНО: перед продакшном закрепите сторонние actions по commit SHA (ADR-007);
 # версии по тегам ниже — официальные релизы, SHA не проверялись из среды разработки.
 jobs:
-  # Имя job `test` используется сервером: релиз разворачивается, только если для его коммита `test` завершился успешно.
+  # Имя job `test` используется сервером: коммит из main разворачивается, только если для него `test` завершился успешно.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -49,22 +49,3 @@ jobs:
           name: playwright-report
           path: apps/web/test-results
           retention-days: 5
-
-  # «Кнопка одобрения»: после зелёных тестов создаётся ЧЕРНОВИК релиза. Сервер видит только опубликованные релизы,
-  # поэтому сайт обновится, когда владелец откроет черновик на GitHub и нажмёт «Publish release».
-  draft-release:
-    needs: test
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Черновик релиза
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: v${{ github.run_number }}.${{ github.run_attempt }}
-        run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
-            --title "Релиз $TAG" \
-            --notes "Коммит: $GITHUB_SHA. Тесты пройдены. Нажмите «Publish release», чтобы обновить сайт на сервере (в течение нескольких минут)."

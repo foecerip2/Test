@@ -7,8 +7,8 @@
 #   1. проверяет, что домен указывает на этот сервер и порты 80/443 свободны;
 #   2. ставит Docker, firewall (22/80/443), fail2ban, автообновления безопасности, swap (если нет);
 #   3. создаёт /opt/leadhunter и ставит службу `lh-update` (systemd-таймер каждые ~3 мин):
-#      она забирает с GitHub ОПУБЛИКОВАННЫЕ релизы проекта, проверяет, что тесты прошли, собирает и запускает сайт,
-#      при сбое сама откатывается. Одобрение = нажатие «Publish release» владельцем на GitHub;
+#      она следит за веткой main на GitHub; как только там появляется новый коммит с зелёными тестами —
+#      собирает и запускает сайт, при сбое сама откатывается. В main код попадает только с разрешения владельца (в чате);
 #   4. выводит временный пароль входа на сайт (один раз).
 # Секретов, токенов и входящего SSH для деплоя не нужно.
 set -euo pipefail
@@ -75,7 +75,7 @@ fi
 
 say "Каталог /opt/leadhunter и конфигурация"
 install -d -m 0755 /opt/leadhunter
-printf 'REPO=%s\n' "$REPO" > /opt/leadhunter/lh.conf
+printf 'REPO=%s\nBRANCH=main\n' "$REPO" > /opt/leadhunter/lh.conf
 ENVF=/opt/leadhunter/.env
 [ -f "$ENVF" ] || { install -m 0600 /dev/null "$ENVF"; printf 'DOMAIN=%s\nBASIC_USER=owner\nBASIC_HASH=\nWEB_IMAGE=\n' "$DOMAIN" > "$ENVF"; }
 if ! grep -qE '^BASIC_HASH=.+' "$ENVF"; then
@@ -153,10 +153,10 @@ fi
 
 say "Готово"
 cat <<EOF
-Сервер настроен. Служба lh-update проверяет GitHub каждые ~3 минуты.
-Как выпустить обновление: после зелёных тестов в main GitHub создаёт ЧЕРНОВИК релиза →
-  github.com/$REPO/releases → откройте черновик → «Publish release» → сайт обновится сам (https://$DOMAIN).
-Откат: опубликуйте/отметьте как «Latest» прежний релиз, либо на сервере: lh-update --rollback
+Сервер настроен. Служба lh-update проверяет ветку main на GitHub каждые ~3 минуты:
+новый коммит с зелёными тестами автоматически собирается и выкатывается на https://$DOMAIN.
+Пауза автообновления: touch /opt/leadhunter/.paused (возобновить: rm /opt/leadhunter/.paused)
+Откат: lh-update --rollback (откатанная версия больше не выкатывается)
 Логи: journalctl -u lh-update -n 50
 Сейчас: смените пароль root и по возможности перейдите на вход по SSH-ключу (флаг --harden-ssh).
 EOF
