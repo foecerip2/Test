@@ -1,0 +1,9 @@
+**/node_modules
+**/.next
+.git
+.github
+docs
+infra
+**/test-results
+**/playwright-report
+.env*

@@ -1,0 +1,19 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Временный шлюз до реальной аутентификации (Фаза 2). После Фазы 2 блок удаляется.
+	basic_auth {
+		{$BASIC_USER} {$BASIC_HASH}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	reverse_proxy web:3000
+}

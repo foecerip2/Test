@@ -1,0 +1,52 @@
+/* Дизайн-токены LeadHunter (DESIGN_SYSTEM.md v1.0).
+   Вторичные цвета затемнены до WCAG AA (≥4.5:1 на --paper и --canvas), см. docs/DECISIONS.md ADR-009. */
+:root {
+  --canvas: #f6f7f5;
+  --paper: #ffffff;
+  --sidebar: #fbfcfa;
+  --ink: #1b2927;
+  --ink-2: #34463d;
+  --muted: #5b6963;
+  --muted-2: #67756f;
+  --accent: #116c57;
+  --accent-dark: #0d5647;
+  --tint: #eaf4ef;
+  --tint-2: #f1f5ef;
+  --border: #e6ebe7;
+  --border-dark: #cfdad3;
+  --amber: #8a5a14;
+  --amber-tint: #fff7e8;
+  --amber-line: #f0e0bb;
+  --red: #9a3f39;
+  --red-tint: #fff0ef;
+  --red-line: #f1d3d0;
+  --green: #1d6a52;
+  --green-tint: #edf6ee;
+  --green-line: #d3e7da;
+  --focus: #2f8f6c; /* ≥3:1 на --paper, --canvas и --deep (WCAG 1.4.11) */
+  --control-line: #7d8d85; /* граница полей ввода ≥3:1 на --paper/--canvas */
+  --deep: #1b3b32;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 8px 30px rgba(27, 41, 39, 0.035);
+
+  --font-body: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-head: "Manrope Variable", "Manrope", var(--font-body);
+
+  --sidebar-w: 252px;
+  --topbar-h: 72px;
+  --content-max: 1440px;
+  --pad-x: 42px;
+  --hit: 40px;
+}
+
+@media (max-width: 1150px) {
+  :root { --sidebar-w: 224px; --pad-x: 25px; }
+}
+@media (max-width: 950px) {
+  :root { --topbar-h: 65px; }
+}
+@media (max-width: 700px) {
+  :root { --topbar-h: 62px; --pad-x: 16px; --hit: 44px; }
+}
