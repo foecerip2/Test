@@ -43,3 +43,11 @@ describe("classifyReply", () => {
     expect(classifyReply("ок").confidence).toBeLessThan(0.5);
   });
 });
+
+describe("classifyReply: отрицания", () => {
+  it("«не присылайте» — отписка, а не интерес", () => {
+    expect(classifyReply("Не присылайте нам больше предложений").label).toBe("unsubscribe");
+    expect(classifyReply("Уберите нас из рассылки").label).toBe("unsubscribe");
+    expect(classifyReply("Присылайте, посмотрим").label).toBe("interested");
+  });
+});

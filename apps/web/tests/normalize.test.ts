@@ -80,3 +80,11 @@ describe("mapImportRows", () => {
     expect(rows[2]!.issues).toEqual(expect.arrayContaining(["Нет названия", "Некорректный сайт", "Некорректный ИНН"]));
   });
 });
+
+describe("mapImportRows: строки с ошибками не занимают ключ дедупликации", () => {
+  it("валидная строка не теряется из-за предыдущей невалидной", () => {
+    const { rows } = mapImportRows([["название", "город", "сайт"], ["Х", "Казань", "bad host"], ["Х", "Казань", ""]], []);
+    expect(rows[0]!.issues.length).toBeGreaterThan(0);
+    expect(rows[1]!.duplicate).toBeNull();
+  });
+});

@@ -7,7 +7,7 @@ export function WeeklyChart({ weeks, demo }: { weeks: { label: string; found: nu
   return (
     <Panel title="Компании по неделям" subtitle={demo ? "Демо: последние 8 недель" : "Последние 8 недель"}>
       <div className={m.legend}>
-        <span><i className={m.sw} style={{ background: "#b9d4c6" }} />Найдено</span>
+        <span><i className={m.sw} style={{ background: "#7a9b8c" }} />Найдено</span>
         <span><i className={m.sw} style={{ background: "var(--accent)" }} />Прошли порог оценки</span>
       </div>
       <div className={m.chart}>
@@ -23,8 +23,9 @@ export function WeeklyChart({ weeks, demo }: { weeks: { label: string; found: nu
       </div>
       <details className={m.alt}>
         <summary>Показать данные таблицей</summary>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Компании по неделям, таблица">
           <table className="data-table" style={{ minWidth: 320 }}>
+            <caption className="sr-only">Компании по неделям</caption>
             <thead><tr><th scope="col">Неделя</th><th scope="col">Найдено</th><th scope="col">Прошли порог</th></tr></thead>
             <tbody>{weeks.map((w) => <tr key={w.label}><td>{w.label}</td><td>{w.found}</td><td>{w.passed}</td></tr>)}</tbody>
           </table>

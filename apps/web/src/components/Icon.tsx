@@ -43,7 +43,7 @@ export type IconName = keyof typeof PATHS;
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
   return (
     <span className={`ico ${className}`} aria-hidden="true">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: PATHS[name] ?? PATHS.info! }} />
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: Object.hasOwn(PATHS, name) ? PATHS[name]! : PATHS.info! }} />
     </span>
   );
 }

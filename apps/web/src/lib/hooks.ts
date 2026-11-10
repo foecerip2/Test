@@ -13,7 +13,7 @@ export function useQuery<T>(fn: (api: Api) => Promise<T>, deps: unknown[] = []):
 
   const run = useCallback((initial: boolean) => {
     const id = ++counter.current;
-    if (initial) setState((s) => ({ ...s, loading: true, error: null }));
+    if (initial) setState({ data: null, error: null, loading: true });
     fnRef.current(getApi()).then(
       (data) => { if (id === counter.current) setState({ data, error: null, loading: false }); },
       (error: Error) => { if (id === counter.current) setState((s) => ({ data: initial ? null : s.data, error, loading: false })); },

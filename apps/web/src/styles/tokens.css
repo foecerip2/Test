@@ -23,7 +23,8 @@
   --green: #1d6a52;
   --green-tint: #edf6ee;
   --green-line: #d3e7da;
-  --focus: #6fb99d;
+  --focus: #2f8f6c; /* ≥3:1 на --paper, --canvas и --deep (WCAG 1.4.11) */
+  --control-line: #7d8d85; /* граница полей ввода ≥3:1 на --paper/--canvas */
   --deep: #1b3b32;
 
   --radius: 12px;

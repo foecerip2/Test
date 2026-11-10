@@ -38,6 +38,8 @@
 .menu.down { top: calc(100% + 8px); right: 0; width: 340px; max-width: calc(100vw - 24px); padding: 0; }
 .menu button, .menu a.menu-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 40px; padding: 0 10px; border: 0; background: none; border-radius: 6px; text-align: left; font-size: 0.8125rem; font-weight: 600; text-decoration: none; color: var(--ink); }
 .menu button:hover, .menu a.menu-item:hover { background: #f1f5f1; }
+.menu button:focus-visible, .menu a.menu-item:focus-visible { outline-offset: -3px; }
+.drawer-close { display: none !important; position: absolute; top: 14px; right: 10px; }
 
 .main-area { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar { height: var(--topbar-h); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--pad-x); background: var(--paper); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
@@ -65,6 +67,8 @@
   .sidebar.open { transform: translateX(0); visibility: visible; }
   .overlay.open { display: block; position: fixed; inset: 0; background: rgba(6, 24, 16, 0.4); z-index: 25; }
   .mobile-menu { display: inline-flex; }
+  .drawer-close { display: inline-flex !important; }
+  .nav-link, .menu button, .menu a.menu-item { min-height: var(--hit); }
   .crumb-muted, .slash { display: none; }
   .status-pill .pill-long { display: none; }
   #content { padding-top: 24px; padding-bottom: 45px; }

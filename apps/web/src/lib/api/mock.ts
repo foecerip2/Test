@@ -5,7 +5,7 @@
  */
 import { classifyReply } from "../classify";
 import { sha256Hex } from "../hash";
-import { mapImportRows, toCsv, normalizeCity, canonicalDomain } from "../normalize";
+import { mapImportRows, toCsv, canonicalDomain } from "../normalize";
 import { SCORE_RULE_VERSION, scoreCompany } from "../scoring";
 import { SEED_COMPANIES, SEED_CONVERSATIONS, type SeedCompany } from "./seed";
 import {
@@ -28,10 +28,10 @@ type DraftRec = Omit<Draft, "currentHash" | "approvalStale">;
 
 export interface MockOptions { empty?: boolean; fail?: boolean; slow?: boolean }
 
-function buildBody(c: CompanyRec, channel: Channel): string {
+function buildBody(c: CompanyRec): string {
   const f = c.factsRec.find((x) => x.kind === "confirmed");
   const ref = f ? `Увидели на вашем сайте: ${f.text.charAt(0).toLowerCase()}${f.text.slice(1)}.` : "Познакомились с информацией о вашей компании.";
-  return `Здравствуйте! ${ref} Мы разрабатываем AutoFlow — помощника, который принимает обращения клиентов и записывает их на обслуживание, пока администратор занят. Если вам это актуально, готовы показать короткий пример на сценарии вашего сервиса и обсудить пилот. Если тема не интересна, просто сообщите — мы больше не будем вас беспокоить.${channel === "email" ? "" : ""}`;
+  return `Здравствуйте! ${ref} Мы разрабатываем AutoFlow — помощника, который принимает обращения клиентов и записывает их на обслуживание, пока администратор занят. Если вам это актуально, готовы показать короткий пример на сценарии вашего сервиса и обсудить пилот. Если тема не интересна, просто сообщите — мы больше не будем вас беспокоить.`;
 }
 const subjectFor = (c: CompanyRec) => `Заявки и запись клиентов — ${c.name}`;
 const draftHash = (d: { channel: string; subject: string; body: string }) => sha256Hex(`${d.channel}\n${d.subject}\n${d.body}`);
@@ -58,6 +58,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
   const jobs: Job[] = [];
   const suppression: SuppressionEntry[] = [];
   const hashes = new Map<string, string>();
+  const queued = new Set<string>();
 
   const sources: SourceConfig[] = [
     { id: "csv", name: "Импорт CSV / XLSX", kind: "csv", enabled: true, licensePolicy: "Ваши данные: хранение по сроку из настроек", disabledReason: null },
@@ -105,7 +106,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
     for (const id of ["c1", "c4", "c14", "c13"]) {
       const c = companies.find((x) => x.id === id)!;
       const ch: Channel = c.contacts.find((k) => k.channel === "email") ? "email" : "phone";
-      drafts.push({ id: uid("d"), companyId: id, companyName: c.name, city: c.city, score: 0, channel: ch, subject: subjectFor(c), body: buildBody(c, ch), version: 1, status: "pending_review",
+      drafts.push({ id: uid("d"), companyId: id, companyName: c.name, city: c.city, score: 0, channel: ch, subject: subjectFor(c), body: buildBody(c), version: 1, status: "pending_review",
         promptVersion: "template-v1", generator: "template", factIds: c.factsRec.filter((f) => f.kind === "confirmed").map((f) => f.id), approvedHash: null, updatedAt: iso(-DAY / 4) });
     }
     tasks.push(
@@ -262,7 +263,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           return { ...toCompany(c), facts: c.factsRec, scoreReasons: sc.reasons, scoreVersion: SCORE_RULE_VERSION, contacts: c.contacts, history: c.history, draftId: dr?.id ?? null, note: c.note };
         });
       },
-      async setStage(id, stage: CrmStage) { return gate(() => { const c = find(id); c.stage = stage; touch(c, "Стадия изменена", `Новая стадия: ${stage}`, "columns"); log("company.stage", "company", id, stage); }, true); },
+      async setStage(id, stage: CrmStage) { return gate(() => { const c = find(id); if (refusal(c) && stage !== "lost") throw new ApiError(409, "SUPPRESSION_PERMANENT", "У компании есть отказ или отписка — стадию нельзя вернуть без нового законного основания"); c.stage = stage; touch(c, "Стадия изменена", `Новая стадия: ${stage}`, "columns"); log("company.stage", "company", id, stage); }, true); },
       async setNote(id, note) { return gate(() => { const c = find(id); c.note = note.slice(0, 2000); touch(c, "Заметка обновлена", "", "file"); log("company.note", "company", id); }, true); },
       async reject(id) { return gate(() => { const c = find(id); c.state = "rejected"; touch(c, "Компания отклонена", "Исключена из работы", "shield"); log("company.reject", "company", id); }, true); },
       async exportCsv(f) {
@@ -281,16 +282,23 @@ export function createMockApi(opts: MockOptions = {}): Api {
           return mapImportRows(table, companies.map((c) => ({ name: c.name, city: c.city, domain: c.domain, inn: c.inn ?? null })));
         });
       },
-      async commit(rows: ImportRow[]) {
+      async commit(rowsIn: ImportRow[]) {
         return gate(() => {
+          let rows = rowsIn;
+          if (rows.length > 5000) throw new ApiError(422, "TOO_MANY_ROWS", "Максимум 5000 строк за один импорт");
+          // Не доверяем клиенту: проверка и дедупликация выполняются заново.
+          const table = [["название", "город", "категория", "сайт", "инн"], ...rows.map((r) => [r.name, r.city, r.category, r.website ?? "", r.inn ?? ""])];
+          rows = mapImportRows(table, companies.map((c) => ({ name: c.name, city: c.city, domain: c.domain, inn: c.inn ?? null }))).rows;
           let added = 0, skipped = 0;
           for (const r of rows) {
             if (r.issues.length || (r.duplicate && r.duplicate.kind !== "candidate")) { skipped++; continue; }
             const domain = canonicalDomain(r.website);
             const id = uid("c");
-            const input = { businessType: "autoservice" as const, demandSignals: 0, siteWorks: !!domain, onlineBookingDetected: null, hasBusinessContact: false, isDuplicate: false, hasRefusal: false };
+            const isAuto = /(автосервис|сто\b|ремонт|шиномонтаж|кузов|детейлинг|автомойк)/i.test(r.category);
+            // Ничего не проверялось: сайт и онлайн-запись не считаются подтверждёнными, баллы не начисляются.
+            const input = { businessType: isAuto ? ("autoservice" as const) : ("other" as const), demandSignals: 0, siteWorks: false, onlineBookingDetected: null, hasBusinessContact: false, isDuplicate: false, hasRefusal: false };
             const rec: CompanyRec = {
-              id, name: r.name, city: r.city || normalizeCity(r.city), category: r.category, domain, input, stage: "new", daysAgo: 0, facts: [], state: "discovered",
+              id, name: r.name, city: r.city, category: r.category, domain, inn: r.inn ?? undefined, input, stage: "new", daysAgo: 0, facts: [], state: "discovered",
               createdAt: iso(), updatedAt: iso(), note: "", demo: false, sourceLabel: "Импорт CSV", contacts: [], factsRec: [], duplicate: false,
               history: [{ id: uid("h"), icon: "download", title: "Импортирована из CSV", text: `Строка ${r.line}`, at: iso(), companyId: id }],
             };
@@ -335,7 +343,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           const c = find(companyId);
           const existing = drafts.find((d) => d.companyId === companyId && d.status !== "rejected");
           if (existing) return toDraft(existing);
-          const d: DraftRec = { id: uid("d"), companyId, companyName: c.name, city: c.city, score: 0, channel, subject: subjectFor(c), body: buildBody(c, channel), version: 1, status: "pending_review",
+          const d: DraftRec = { id: uid("d"), companyId, companyName: c.name, city: c.city, score: 0, channel, subject: subjectFor(c), body: buildBody(c), version: 1, status: "pending_review",
             promptVersion: "template-v1", generator: "template", factIds: c.factsRec.filter((f) => f.kind === "confirmed").map((f) => f.id), approvedHash: null, updatedAt: iso() };
           drafts.unshift(d); touch(c, "Создан черновик", "Шаблон без AI, версия template-v1", "file"); log("draft.generate", "draft", d.id);
           return toDraft(d);
@@ -344,6 +352,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       async update(id, patch, expectedVersion) {
         return gate(async () => {
           const d = findDraft(id);
+          if (d.status === "rejected") throw new ApiError(409, "INVALID_STATE", "Черновик отклонён и недоступен для правок");
           if (d.version !== expectedVersion) throw new ApiError(409, "VERSION_CONFLICT", "Черновик изменён в другом месте. Обновите страницу.");
           if (patch.body !== undefined) {
             if (!patch.body.trim()) throw new ApiError(422, "VALIDATION", "Текст не может быть пустым");
@@ -361,6 +370,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
       async approve(id, expectedVersion) {
         return gate(async () => {
           const d = findDraft(id);
+          if (d.status === "rejected") throw new ApiError(409, "INVALID_STATE", "Отклонённый черновик нельзя согласовать");
           if (d.version !== expectedVersion) throw new ApiError(409, "VERSION_CONFLICT", "Черновик изменён. Проверьте актуальный текст перед согласованием.");
           d.approvedHash = await hashOf(d); d.status = "approved"; d.updatedAt = iso();
           touch(find(d.companyId), "Текст согласован", "Согласие адресата проверяется отдельно", "check"); log("draft.approve", "draft", id, d.approvedHash.slice(0, 12));
@@ -382,14 +392,16 @@ export function createMockApi(opts: MockOptions = {}): Api {
         if (contact?.suppressed) reasons.push("SUPPRESSED");
         if (contact?.consent.state === "withdrawn") reasons.push("CONSENT_WITHDRAWN");
         else if (contact && contact.consent.state !== "verified") reasons.push("CONSENT_NOT_VERIFIED");
-        if (d.status !== "approved") reasons.push(draft.approvalStale ? "APPROVAL_STALE" : "TEXT_NOT_APPROVED");
+        const approvedNow = d.status === "approved" && d.approvedHash !== null && d.approvedHash === draft.currentHash;
+        if (!approvedNow) reasons.push(draft.approvalStale ? "APPROVAL_STALE" : "TEXT_NOT_APPROVED");
+        if (queued.has(draftId)) reasons.push("ALREADY_QUEUED");
         if (settings.emergencyStopSend) reasons.push("EMERGENCY_STOP");
         const next: OutboxPreview["nextAction"] = reasons.includes("TEXT_NOT_APPROVED") || reasons.includes("APPROVAL_STALE") ? "approve_text"
           : reasons.includes("CONSENT_NOT_VERIFIED") && contact?.platformAllowed ? "record_consent"
           : reasons.includes("EMERGENCY_STOP") && reasons.length === 1 ? "enable_sending"
           : reasons.length ? "manual_contact" : "none";
         return {
-          draftId, channel: d.channel, contactId: contact?.id ?? null, recipientVerified: !!contact?.lastVerifiedAt, ownerApproved: d.status === "approved" && !draft.approvalStale,
+          draftId, channel: d.channel, contactId: contact?.id ?? null, recipientVerified: !!contact?.lastVerifiedAt, ownerApproved: approvedNow,
           consentState: contact?.consent.state ?? "unknown", platformAllowed: !!contact?.platformAllowed, suppressed: !!contact?.suppressed, emergencyStop: settings.emergencyStopSend,
           canSend: reasons.length === 0, reasonCodes: reasons, nextAction: next,
         };
@@ -399,6 +411,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           const p = await api.outbox.preview(draftId);
           if (!p.canSend) throw new ApiError(403, "SEND_BLOCKED", `Отправка заблокирована: ${p.reasonCodes.join(", ")}`);
           const d = findDraft(draftId);
+          queued.add(draftId);
           touch(find(d.companyId), "Демо: отправка поставлена в очередь", "Реальная отправка в этом режиме не выполняется", "send"); log("outbox.send_demo", "draft", draftId);
           return { status: "queued_demo" as const };
         }, true);
@@ -471,9 +484,17 @@ export function createMockApi(opts: MockOptions = {}): Api {
       async get() { return gate(() => ({ ...settings })); },
       async patch(p) {
         return gate(() => {
-          if (p.scoreThreshold !== undefined && (p.scoreThreshold < 0 || p.scoreThreshold > 100)) throw new ApiError(422, "VALIDATION", "Порог — число от 0 до 100");
-          if (p.aiDailyBudgetRub !== undefined && p.aiDailyBudgetRub < 0) throw new ApiError(422, "VALIDATION", "Бюджет не может быть отрицательным");
-          Object.assign(settings, p); log("settings.patch", "settings", "main", Object.keys(p).join(", ")); return { ...settings };
+          const allowed = ["aiMode", "aiDailyBudgetRub", "aiMonthlyBudgetRub", "emergencyStopSend", "scoreThreshold", "retentionDays"] as const;
+          const clean: Partial<Settings> = {};
+          for (const k of allowed) if (p[k] !== undefined) (clean as Record<string, unknown>)[k] = p[k];
+          const bad = (v: unknown, lo: number, hi: number) => typeof v !== "number" || !Number.isFinite(v) || v < lo || v > hi;
+          if (clean.scoreThreshold !== undefined && bad(clean.scoreThreshold, 0, 100)) throw new ApiError(422, "VALIDATION", "Порог — число от 0 до 100");
+          if (clean.aiDailyBudgetRub !== undefined && bad(clean.aiDailyBudgetRub, 0, 100_000)) throw new ApiError(422, "VALIDATION", "Дневной бюджет — число от 0 до 100000");
+          if (clean.aiMonthlyBudgetRub !== undefined && bad(clean.aiMonthlyBudgetRub, 0, 1_000_000)) throw new ApiError(422, "VALIDATION", "Месячный бюджет — число от 0 до 1000000");
+          if (clean.retentionDays !== undefined && bad(clean.retentionDays, 1, 3650)) throw new ApiError(422, "VALIDATION", "Срок хранения — от 1 до 3650 дней");
+          if (clean.aiMode !== undefined && !["none", "api", "manual"].includes(clean.aiMode)) throw new ApiError(422, "VALIDATION", "Неизвестный режим AI");
+          if ((clean.aiMonthlyBudgetRub ?? settings.aiMonthlyBudgetRub) < (clean.aiDailyBudgetRub ?? settings.aiDailyBudgetRub)) throw new ApiError(422, "VALIDATION", "Месячный бюджет не может быть меньше дневного");
+          Object.assign(settings, clean); log("settings.patch", "settings", "main", Object.keys(p).join(", ")); return { ...settings };
         }, true);
       },
     },

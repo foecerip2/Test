@@ -149,8 +149,8 @@ export function mapImportRows(table: string[][], existing: ExistingCompany[]): {
     else if (byDomain) duplicate = { kind: "exact", of: byDomain.name };
     else if (byName) duplicate = { kind: "candidate", of: byName.name };
     const key = inn ?? (website ? `${website}|${cityNorm}` : `${nameNorm}|${cityNorm}`);
-    if (!duplicate && seen.has(key)) duplicate = { kind: "in_file", of: seen.get(key)! };
-    if (!seen.has(key)) seen.set(key, name);
+    if (!duplicate && !issues.length && seen.has(key)) duplicate = { kind: "in_file", of: seen.get(key)! };
+    if (!issues.length && !seen.has(key)) seen.set(key, name);
 
     return { line: i + 2, name, city: titleCaseCity(cityNorm), category: get(col.category) || "Автосервис", website, inn, issues, duplicate };
   });

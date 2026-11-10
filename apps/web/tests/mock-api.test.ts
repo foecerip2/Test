@@ -109,3 +109,55 @@ describe("режим пустых данных", () => {
     expect(s.funnel.every((f) => f.count === 0)).toBe(true);
   });
 });
+
+describe("замечания ревью: инварианты", () => {
+  it("отклонённый черновик нельзя согласовать или править", async () => {
+    const d = (await api.drafts.list())[0]!;
+    await api.drafts.reject(d.id);
+    await expect(api.drafts.approve(d.id, d.version)).rejects.toMatchObject({ status: 409, code: "INVALID_STATE" });
+    await expect(api.drafts.update(d.id, { body: "x" }, d.version)).rejects.toMatchObject({ status: 409, code: "INVALID_STATE" });
+  });
+
+  it("повторная отправка заблокирована (идемпотентность)", async () => {
+    const d = (await api.drafts.list()).find((x) => x.companyName.startsWith("ТестАвто"))!;
+    await api.settings.patch({ emergencyStopSend: false });
+    await api.drafts.approve(d.id, d.version);
+    await api.outbox.send(d.id);
+    await expect(api.outbox.send(d.id)).rejects.toMatchObject({ status: 403 });
+    expect((await api.outbox.preview(d.id)).reasonCodes).toContain("ALREADY_QUEUED");
+  });
+
+  it("ИНН сохраняется при импорте и дедуплицирует следующий импорт", async () => {
+    const first = await api.imports.preview("название;город;инн\nНовая;Тверь;7707083893\n");
+    await api.imports.commit(first.rows);
+    const second = await api.imports.preview("название;город;инн\nДругая;Казань;7707083893\n");
+    expect(second.rows[0]!.duplicate?.kind).toBe("exact");
+  });
+
+  it("импортированная компания не получает непроверенных баллов", async () => {
+    const prev = await api.imports.preview("название;город;сайт;категория\nСтоматология Х;Тверь;x.example;Стоматология\n");
+    await api.imports.commit(prev.rows);
+    const c = (await api.companies.list({ query: "Стоматология" })).items[0]!;
+    const det = await api.companies.get(c.id);
+    expect(det.score).toBeLessThan(25);
+    expect(det.scoreReasons.find((r) => r.rule === "site")!.points).toBe(0);
+  });
+
+  it("commit не доверяет клиенту: подделанные issues/duplicate перепроверяются", async () => {
+    const forged = [{ line: 2, name: "", city: "Тверь", category: "Автосервис", website: null, inn: null, issues: [], duplicate: null }];
+    expect(await api.imports.commit(forged)).toEqual({ added: 0, skipped: 1 });
+  });
+
+  it("settings.patch: только разрешённые поля и серверная валидация", async () => {
+    await api.settings.patch({ aiSpentTodayRub: 999 } as never);
+    expect((await api.settings.get()).aiSpentTodayRub).toBe(0);
+    await expect(api.settings.patch({ retentionDays: -5 })).rejects.toMatchObject({ status: 422 });
+    await expect(api.settings.patch({ aiDailyBudgetRub: 500, aiMonthlyBudgetRub: 100 })).rejects.toMatchObject({ status: 422 });
+    await expect(api.settings.patch({ aiMode: "evil" as never })).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("стадию отписавшейся компании нельзя вернуть", async () => {
+    const co = (await api.companies.list({ query: "АвтоПрофи" })).items[0]!;
+    await expect(api.companies.setStage(co.id, "new")).rejects.toMatchObject({ status: 409, code: "SUPPRESSION_PERMANENT" });
+  });
+});

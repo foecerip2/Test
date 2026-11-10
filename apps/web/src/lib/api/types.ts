@@ -108,7 +108,7 @@ export interface Draft {
 
 export type ReasonCode =
   | "EMERGENCY_STOP" | "TEXT_NOT_APPROVED" | "APPROVAL_STALE" | "CONSENT_NOT_VERIFIED"
-  | "CONSENT_WITHDRAWN" | "SUPPRESSED" | "CHANNEL_NOT_SUPPORTED" | "NO_CONTACT";
+  | "CONSENT_WITHDRAWN" | "SUPPRESSED" | "CHANNEL_NOT_SUPPORTED" | "NO_CONTACT" | "ALREADY_QUEUED";
 
 export interface OutboxPreview {
   draftId: string;

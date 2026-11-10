@@ -41,7 +41,10 @@ export function ImportWizard({ onClose }: { onClose: () => void }) {
     if (file.size > MAX_BYTES) { setError("Файл больше 2 МБ. Разделите его на части."); return; }
     setBusy(true);
     try {
-      const t = await file.text();
+      const buf = await file.arrayBuffer();
+      let t: string;
+      try { t = new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+      catch { t = new TextDecoder("windows-1251").decode(buf); } // Excel для Windows сохраняет CSV в cp1251
       setFileName(file.name);
       const p = await getApi().imports.preview(t);
       setPreview(p);

@@ -13,6 +13,7 @@ export const REASON_TEXT: Record<ReasonCode, string> = {
   SUPPRESSED: "Адрес в списке подавления",
   CHANNEL_NOT_SUPPORTED: "Канал не поддерживает автоматическую отправку — только ручной контакт",
   NO_CONTACT: "Для канала нет контакта",
+  ALREADY_QUEUED: "Сообщение уже поставлено в очередь",
 };
 const CONSENT_TEXT: Record<string, string> = {
   verified: "Согласие подтверждено", unknown: "Согласие не подтверждено", denied: "Адресат отказал", withdrawn: "Согласие отозвано", expired: "Срок согласия истёк",
@@ -32,7 +33,7 @@ export function ApprovalGate({ draft, preview, dirty, busy, onApprove, onReject,
   onApprove: () => void; onReject: () => void; onSend: () => void;
 }) {
   const approveBlocked = dirty ? "Сначала сохраните изменения текста" : draft.status === "approved" && !draft.approvalStale ? "Текущая версия уже согласована" : null;
-  const sendBlocked = preview.canSend ? null : preview.reasonCodes.map((c) => REASON_TEXT[c]).join("; ");
+  const sendBlocked = dirty ? "Сохраните или отмените несохранённые правки текста" : preview.canSend ? null : preview.reasonCodes.map((c) => REASON_TEXT[c]).join("; ");
   const reasons = preview.reasonCodes;
   return (
     <div className="panel-body">
@@ -56,7 +57,7 @@ export function ApprovalGate({ draft, preview, dirty, busy, onApprove, onReject,
       <div className="row spacer-top">
         <button className="btn btn-primary" onClick={onApprove} disabled={busy || !!approveBlocked} aria-describedby={approveBlocked ? "approve-why" : undefined}><Icon name="check" /> Согласовать текст</button>
         <button className="btn btn-danger" onClick={onReject} disabled={busy}><Icon name="close" /> Отклонить</button>
-        <button className="btn" onClick={onSend} disabled={busy || !preview.canSend} aria-describedby={sendBlocked ? "send-why" : undefined}><Icon name="send" /> Отправить</button>
+        <button className="btn" onClick={onSend} disabled={busy || dirty || !preview.canSend} aria-describedby={sendBlocked ? "send-why" : undefined}><Icon name="send" /> Отправить</button>
       </div>
       {approveBlocked && <p className="field-hint" id="approve-why">Согласование недоступно: {approveBlocked}.</p>}
       {sendBlocked && <p className="field-hint" id="send-why">Отправка недоступна: {sendBlocked}.</p>}

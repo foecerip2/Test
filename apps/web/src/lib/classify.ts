@@ -2,7 +2,7 @@
 import type { ConversationStage } from "./api/types";
 
 const RULES: { label: ConversationStage; re: RegExp; confidence: number }[] = [
-  { label: "unsubscribe", re: /(не\s+пиш|больше\s+не|отпиш|отписк|удалите|прекрат|не\s+беспоко|stop|unsubscribe)/i, confidence: 0.9 },
+  { label: "unsubscribe", re: /(не\s+(пиш|присыла|звон|беспоко)|больше\s+не|отпиш|отписк|удалите|уберите|исключите|из\s+рассылк|прекрат|stop|unsubscribe)/i, confidence: 0.9 },
   { label: "wrong_contact", re: /(не\s+по\s+адресу|не\s+тот\s+(контакт|адрес)|ошиблись|не\s+(наш|к\s+нам))/i, confidence: 0.75 },
   { label: "not_interested", re: /(не\s+актуальн|не\s+интересн|не\s+нужн|откаж|не\s+подход)/i, confidence: 0.8 },
   { label: "later", re: /(позже|потом|в\s+следующ|через\s+(месяц|неделю|время)|не\s+сейчас)/i, confidence: 0.7 },

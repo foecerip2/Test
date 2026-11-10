@@ -1,6 +1,7 @@
 .split { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 540px; }
 .list { border-right: 1px solid var(--border); overflow-y: auto; max-height: 720px; }
 .thread { min-width: 0; }
+.list button:focus-visible { outline-offset: -3px; }
 .back { display: none; }
 @media (max-width: 950px) { .split { grid-template-columns: 240px minmax(0, 1fr); } }
 @media (max-width: 700px) {
