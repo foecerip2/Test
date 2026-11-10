@@ -16,6 +16,7 @@ from app.core.permissions import ApiError
 from app.db.models import AuditEvent, LedgerEntry, Membership, Organization, User
 from app.db.session import get_db
 from app.modules.audit import service as audit
+from app.modules.billing import credits as credits_mod
 from app.modules.billing import ledger
 from app.modules.billing.ledger import LedgerError
 from app.modules.servers.schemas import CamelModel
@@ -38,7 +39,7 @@ def balance(ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)
     b = ledger.get_balance(db, ctx.org_id)
     org = db.get(Organization, ctx.org_id)
     return {"available": b.available, "reserved": b.held, "dailyCap": s.credits_daily_cap, "monthlyCap": s.credits_monthly_cap,
-            "mode": org.ai_mode if org else "byok", "creditsConfigured": s.platform_ai_configured,
+            "mode": org.ai_mode if org else "byok", "creditsConfigured": credits_mod.resolve_platform_ai(db, s) is not None,
             "unit": "кредитов (минимальных единиц)"}
 
 

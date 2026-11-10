@@ -144,6 +144,28 @@ test("реальный стек: публичный ключ сервиса и �
   await expect(page.getByText("250").first()).toBeVisible();
   await expect(page.getByText("Тестовые кредиты: e2e-проверка ledger").first()).toBeVisible();
   await expect(page.getByText("Кредиты закончились")).toHaveCount(0);
+
+  // ───── Админ-панель: подключение модели платформы. Ключ шифруется на сервере, наружу — только маска ─────
+  const PKEY = "sk-STACKDBKEY-0123456789";
+  await page.goto("/admin");
+  await expect(page.getByText("Модели не подключены")).toBeVisible();
+  await page.getByRole("button", { name: "Подключить модель" }).click();
+  const md = page.getByRole("dialog");
+  await md.getByLabel("Модель", { exact: true }).fill("stack-db-model");
+  await md.getByLabel("API-ключ платформы").fill(PKEY);
+  await md.getByLabel("Цена входа, кредитов / 1000 токенов").fill("7");
+  await md.getByLabel("Цена выхода, кредитов / 1000 токенов").fill("9");
+  await md.getByLabel("Версия прайс-листа (необязательно)").fill("e2e-2026-11");
+  await md.getByRole("checkbox", { name: /Пропустить проверку ключа/ }).click(); // в песочнице нет доступа к провайдеру
+  await md.getByRole("button", { name: "Подключить", exact: true }).click();
+  await expect(page.getByText("Модель подключена")).toBeVisible();
+  const row = page.getByRole("list", { name: "Модели платформы" }).getByRole("listitem");
+  await expect(row).toContainText("stack-db-model");
+  await expect(row).toContainText("Активна");
+  await expect(row).toContainText("sk-••••6789");
+  await expect(row).toContainText("вход 7 / выход 9");
+  expect(await page.content()).not.toContain("STACKDBKEY"); // ключ не попадает в страницу
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("STACKDBKEY");
 });
 
 test("реальный стек: выход закрывает доступ", async ({ page }) => {

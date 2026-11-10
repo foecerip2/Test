@@ -1,6 +1,6 @@
 import type {
   ActionPlan, AiKey, AuditEvent, Balance, ChatMessage, DeployTemplate, Deployment, FeatureFlag, Invite,
-  JobEvent, LedgerEntry, Me, MetricSample, Operation, Provider, Result, ServerSummary, SessionInfo,
+  JobEvent, LedgerEntry, Me, MetricSample, Operation, PlatformModel, Provider, Result, ServerSummary, SessionInfo,
 } from "@/lib/types";
 
 /**
@@ -83,6 +83,9 @@ async function pick<T>(f: (m: Fx) => Promise<Result<T>>, real: () => Promise<Res
 }
 
 export interface AddServerInput { name: string; host: string; port: number; username: string; fingerprint: string; acceptRootRisk?: boolean }
+export interface PlatformModelList { models: PlatformModel[]; envFallback: boolean; note: string }
+export interface AddPlatformModelInput { provider: Provider; model: string; key: string; priceIn: number; priceOut: number; priceListVersion: string; skipValidation: boolean }
+const DEMO_ONLY = { ok: false as const, code: "error" as const, message: "Подключение моделей платформы доступно только с реальным API." };
 export interface ProbeResult { fingerprint: string; keyType: string; source: "ssh" | "demo" }
 export interface VerifyResult { os: string; server: ServerSummary }
 /** Ответ реального API на подтверждение (Фаза 3): согласие записано, исполнитель появится в Фазе 4. */
@@ -230,6 +233,19 @@ export const api = {
     invites: () => pick<Invite[]>((m) => m.invites(), () => request("GET", "/admin/invites")),
     createInvite: () => pick<Invite>((m) => m.createInvite(), () => request("POST", "/admin/invites")),
     audit: () => pick<AuditEvent[]>((m) => m.audit(), () => request("GET", "/admin/audit")),
+    /** Модели платформы (режим Credits): только администратор платформы, только реальный API. Ключ никогда не возвращается. */
+    models: async (): Promise<Result<PlatformModelList>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1"
+        ? { ok: true, data: { models: [], envFallback: false, note: "Демо-режим: модели платформы подключаются на реальном API." } }
+        : request("GET", "/admin/models"),
+    addModel: async (input: AddPlatformModelInput): Promise<Result<PlatformModel>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? DEMO_ONLY : request("POST", "/admin/models", input),
+    activateModel: async (id: string): Promise<Result<PlatformModel>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? DEMO_ONLY : request("POST", `/admin/models/${encodeURIComponent(id)}/activate`),
+    checkModel: async (id: string): Promise<Result<PlatformModel>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? DEMO_ONLY : request("POST", `/admin/models/${encodeURIComponent(id)}/check`),
+    deleteModel: async (id: string): Promise<Result<{ ok: true }>> =>
+      process.env.NEXT_PUBLIC_DEV_FIXTURES === "1" ? DEMO_ONLY : request("DELETE", `/admin/models/${encodeURIComponent(id)}`),
     /** idempotencyKey создаётся ОДИН раз на открытие диалога: повтор/двойной клик с тем же ключом не начислит кредиты второй раз. */
     issueCredits: (input: { email: string; amount: number; reason: string; idempotencyKey?: string }) =>
       pick<{ ok: true }>((m) => m.issueCredits(input), () =>

@@ -19,6 +19,7 @@ from app.db.session import get_db
 from app.modules.ai import chatgpt, chatgpt_auth, service
 from app.modules.ai.providers import PROVIDERS, ProviderError
 from app.modules.audit import service as audit
+from app.modules.billing import credits as credits_mod
 from app.modules.servers.schemas import CamelModel
 
 router = APIRouter(tags=["ai"])
@@ -140,8 +141,8 @@ def get_mode(ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db
 @router.put("/billing/mode")
 def set_mode(body: ModeBody, ctx: AuthContext = Depends(get_ctx()), db: Session = Depends(get_db)) -> dict[str, str]:
     require_role(ctx, "owner")
-    if body.mode == "credits" and not get_settings().platform_ai_configured:
-        raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен на сервере: не заданы ключ платформы и цены. Используйте собственные ключи (BYOK).")
+    if body.mode == "credits" and credits_mod.resolve_platform_ai(db, get_settings()) is None:
+        raise ApiError(409, "mode_unavailable", "Режим кредитов не настроен: администратор платформы не подключил модель. Используйте собственные ключи (BYOK).")
     org = db.get(Organization, ctx.org_id)
     if org is None:
         raise ApiError(404, "not_found", "Организация не найдена.")

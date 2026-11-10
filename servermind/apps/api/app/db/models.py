@@ -365,3 +365,29 @@ class LedgerEntry(Base):
     tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = _now()
+
+
+class PlatformModel(Base):
+    """Модель платформы для режима Credits. Подключается ТОЛЬКО администратором платформы из админ-панели; ключ шифруется AEAD
+    (привязка к id строки), наружу не отдаётся — только маска. Активна ровно одна (частичный уникальный индекс)."""
+
+    __tablename__ = "platform_models"
+    __table_args__ = (
+        UniqueConstraint("provider", "model", name="uq_platform_model"),
+        CheckConstraint("provider in ('openai','anthropic','deepseek')", name="ck_platform_provider"),
+        CheckConstraint("status in ('valid','unchecked','invalid')", name="ck_platform_status"),
+        CheckConstraint("price_in_per_1k > 0 and price_out_per_1k > 0", name="ck_platform_prices"),
+        Index("uq_platform_model_active", "active", unique=True, postgresql_where=text("active")),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    provider: Mapped[str] = mapped_column(String(16))
+    model: Mapped[str] = mapped_column(String(64))
+    key_enc: Mapped[bytes] = mapped_column(LargeBinary)
+    masked: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(10), default="unchecked")
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    price_in_per_1k: Mapped[int] = mapped_column(Integer)
+    price_out_per_1k: Mapped[int] = mapped_column(Integer)
+    price_list_version: Mapped[str] = mapped_column(String(40), default="")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[dt.datetime] = _now()
