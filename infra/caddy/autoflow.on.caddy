@@ -1,0 +1,24 @@
+# AutoFlow включён: AUTOFLOW_DOMAIN задан в /opt/leadhunter/.env (`lh-config autoflow DOMAIN`).
+# /api/* пока идёт на тот же api:8000, что и LeadHunter; при переносе на отдельный сервер меняется адрес upstream (docs/AUTOFLOW_DEPLOY.md).
+# Шлюз basic-auth LeadHunter сюда НЕ подключается: лендинг публичный.
+{$AUTOFLOW_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy autoflow-web:3000
+	}
+}

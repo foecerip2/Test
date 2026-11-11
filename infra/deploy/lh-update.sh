@@ -3,8 +3,10 @@
 # Запускается systemd-таймером каждые ~3 минуты от root. Идемпотентен, не запускается параллельно.
 #
 # Логика: берём последний коммит ветки main → ждём, пока для него успешно пройдут тесты (job `test`)
-# → забираем исходники этого коммита → собираем образы локально (web всегда; api — если есть apps/api/Dockerfile)
-# → запускаем → проверка здоровья web И api → при сбое откат на оба прежних образа.
+# → забираем исходники этого коммита → собираем образы локально (web всегда; api — если есть apps/api/Dockerfile;
+# autoflow — только если в .env задан AUTOFLOW_DOMAIN и в коммите есть apps/autoflow-web/Dockerfile)
+# → запускаем → проверка здоровья web, api и autoflow-web (включённых) → при сбое откат на все прежние образа.
+# Без AUTOFLOW_DOMAIN поведение прежнее: третий образ не собирается и не запускается.
 # «Одобрение» — в чате с разработчиком: в main код попадает только после вашего разрешения.
 #
 # ВАЖНО про БД: контейнер api сам выполняет `alembic upgrade head` при старте. Откат образа НЕ откатывает схему БД,
@@ -37,7 +39,18 @@ get_env() { grep -E "^$1=" "$APP/.env" | head -1 | cut -d= -f2- || true; }
 set_env() { if grep -qE "^$1=" "$APP/.env"; then sed -i "s|^$1=.*|$1=$2|" "$APP/.env"; else echo "$1=$2" >> "$APP/.env"; fi; }
 read_file() { cat "$APP/$1" 2>/dev/null || true; }
 
-api_enabled() { [ "$(get_env COMPOSE_PROFILES)" = "api" ]; }
+# COMPOSE_PROFILES — список через запятую (api, autoflow); прежнее значение «api» остаётся допустимым.
+has_profile() { case ",$(get_env COMPOSE_PROFILES)," in *",$1,"*) return 0 ;; esac; return 1; }
+profile_add() { local cur; has_profile "$1" && return 0; cur="$(get_env COMPOSE_PROFILES)"; set_env COMPOSE_PROFILES "${cur:+$cur,}$1"; }
+profile_del() {
+  local out="" p arr=(); has_profile "$1" || return 0
+  IFS=, read -ra arr <<<"$(get_env COMPOSE_PROFILES)"
+  for p in "${arr[@]}"; do [ "$p" = "$1" ] || out="${out:+$out,}$p"; done
+  set_env COMPOSE_PROFILES "$out"
+}
+api_enabled() { has_profile api; }
+af_enabled() { has_profile autoflow; }
+af_wanted() { [ -n "$(get_env AUTOFLOW_DOMAIN)" ]; }   # владелец включил AutoFlow (`lh-config autoflow DOMAIN`)
 
 service_healthy() {   # $1 = сервис compose
   local cid st
@@ -49,26 +62,29 @@ service_healthy() {   # $1 = сервис compose
 
 healthy() {
   for _ in $(seq 1 "$HEALTH_TRIES"); do
-    if service_healthy web && { ! api_enabled || service_healthy api; }; then return 0; fi
+    if service_healthy web && { ! api_enabled || service_healthy api; } && { ! af_enabled || service_healthy autoflow-web; }; then return 0; fi
     sleep "$HEALTH_SLEEP"
   done
   return 1
 }
 
-# switch_to WEB_IMAGE [API_IMAGE] — перезапуск стека на образах; при провале здоровья — возврат на прежние оба.
+# switch_to WEB_IMAGE [API_IMAGE] [AUTOFLOW_IMAGE] — перезапуск стека на образах; при провале здоровья — возврат на прежние.
 switch_to() {
-  local web="$1" apiimg="${2:-}" prev_web prev_api
-  prev_web="$(get_env WEB_IMAGE)"; prev_api="$(get_env API_IMAGE)"
+  local web="$1" apiimg="${2:-}" afimg="${3:-}" prev_web prev_api prev_af
+  prev_web="$(get_env WEB_IMAGE)"; prev_api="$(get_env API_IMAGE)"; prev_af="$(get_env AUTOFLOW_IMAGE)"
   set_env WEB_IMAGE "$web"
   [ -n "$apiimg" ] && set_env API_IMAGE "$apiimg"
+  [ -n "$afimg" ] && set_env AUTOFLOW_IMAGE "$afimg"
   compose up -d --remove-orphans
   if healthy; then return 0; fi
-  log "Проверка здоровья не пройдена для web=$web${apiimg:+ api=$apiimg}"
-  if { [ -n "$prev_web" ] && [ "$prev_web" != "$web" ]; } || { [ -n "$apiimg" ] && [ -n "$prev_api" ] && [ "$prev_api" != "$apiimg" ]; }; then
+  log "Проверка здоровья не пройдена для web=$web${apiimg:+ api=$apiimg}${afimg:+ autoflow=$afimg}"
+  if { [ -n "$prev_web" ] && [ "$prev_web" != "$web" ]; } || { [ -n "$apiimg" ] && [ -n "$prev_api" ] && [ "$prev_api" != "$apiimg" ]; } \
+     || { [ -n "$afimg" ] && [ -n "$prev_af" ] && [ "$prev_af" != "$afimg" ]; }; then
     [ -n "$prev_web" ] && set_env WEB_IMAGE "$prev_web"
     [ -n "$prev_api" ] && set_env API_IMAGE "$prev_api"
+    [ -n "$prev_af" ] && set_env AUTOFLOW_IMAGE "$prev_af"
     compose up -d --remove-orphans
-    log "Автоматический откат на web=$prev_web${prev_api:+ api=$prev_api}"
+    log "Автоматический откат на web=$prev_web${prev_api:+ api=$prev_api}${prev_af:+ autoflow=$prev_af}"
   fi
   return 1
 }
@@ -81,12 +97,17 @@ if [ "${1:-}" = "--rollback" ]; then
   if [ -n "$apiimg" ] && ! docker image inspect "$apiimg" >/dev/null 2>&1; then
     log "Образ $apiimg уже удалён — откат api пропущен, откатывается только web"; apiimg=""
   fi
-  log "Откат на web=$img${apiimg:+ api=$apiimg} (схема БД не откатывается!)"
-  if switch_to "$img" "$apiimg"; then
+  afimg="$(read_file .prev_good_af)"
+  if [ -n "$afimg" ] && { ! af_enabled || ! docker image inspect "$afimg" >/dev/null 2>&1; }; then
+    log "Образ AutoFlow $afimg недоступен или AutoFlow выключен — откат autoflow пропущен"; afimg=""
+  fi
+  log "Откат на web=$img${apiimg:+ api=$apiimg}${afimg:+ autoflow=$afimg} (схема БД не откатывается!)"
+  if switch_to "$img" "$apiimg" "$afimg"; then
     # откатываемый коммит помечаем как отвергнутый, иначе автообновление сразу вернёт его обратно
     bad="$(read_file .last_good_sha)"; [ -n "$bad" ] && echo "$bad" > "$APP/.failed_sha"
     echo "$img" > "$APP/.last_good"
     [ -n "$apiimg" ] && echo "$apiimg" > "$APP/.last_good_api"
+    [ -n "$afimg" ] && echo "$afimg" > "$APP/.last_good_af"
     [ -s "$APP/.prev_good_sha" ] && cp "$APP/.prev_good_sha" "$APP/.last_good_sha"
     log "Откат выполнен. Автообновление продолжится со следующего нового коммита в $BRANCH"
   fi
@@ -100,7 +121,13 @@ head="$(api "repos/$REPO/commits/$BRANCH")" || { log "GitHub недоступе�
 sha="$(jq -r '.sha // empty' <<<"$head")"
 [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { log "Не удалось определить коммит ветки $BRANCH: пропуск"; exit 0; }
 
-[ "$(read_file .last_good_sha)" = "$sha" ] && exit 0                 # уже развёрнут
+# Владелец включил AutoFlow (lh-config autoflow), а образ ещё не собран: на уже развёрнутом коммите нужен дособирающий проход
+af_missing=0
+if af_wanted && [ -f "$SRC/apps/autoflow-web/Dockerfile" ]; then
+  af_cur="$(get_env AUTOFLOW_IMAGE)"
+  { [ -n "$af_cur" ] && docker image inspect "$af_cur" >/dev/null 2>&1; } || af_missing=1
+fi
+[ "$(read_file .last_good_sha)" = "$sha" ] && [ "$af_missing" -eq 0 ] && exit 0   # уже развёрнут
 [ "$(read_file .failed_sha)" = "$sha" ] && exit 0                    # эту версию уже пробовали/откатили
 
 # 2. Тесты для этого коммита должны пройти (если ещё идут — подождём следующего запуска)
@@ -123,7 +150,13 @@ CAND="$(mktemp -d)"
 cp "$SRC/infra/caddy/Caddyfile" "$CAND/Caddyfile"
 bh="$(get_env BASIC_HASH)"
 if [ -n "$bh" ]; then cp "$SRC/infra/caddy/gate.on.caddy" "$CAND/gate.caddy"; else cp "$SRC/infra/caddy/gate.off.caddy" "$CAND/gate.caddy"; fi
-if ! docker run --rm -v "$CAND:/etc/caddy:ro" -e "DOMAIN=$(get_env DOMAIN)" -e "BASIC_USER=$(get_env BASIC_USER)" -e "BASIC_HASH=${bh//\$\$/\$}" \
+# AutoFlow: на проверку идёт тот вариант, который будет установлен (on — только если домен задан и в коммите есть Dockerfile)
+AF_DOMAIN="$(get_env AUTOFLOW_DOMAIN)"
+AF_NOW=0; af_wanted && [ -f "$SRC/apps/autoflow-web/Dockerfile" ] && AF_NOW=1
+if [ "$AF_NOW" -eq 1 ] && [ -f "$SRC/infra/caddy/autoflow.on.caddy" ]; then cp "$SRC/infra/caddy/autoflow.on.caddy" "$CAND/autoflow.caddy"
+elif [ -f "$SRC/infra/caddy/autoflow.off.caddy" ]; then cp "$SRC/infra/caddy/autoflow.off.caddy" "$CAND/autoflow.caddy"
+else : > "$CAND/autoflow.caddy"; fi
+if ! docker run --rm -v "$CAND:/etc/caddy:ro" -e "DOMAIN=$(get_env DOMAIN)" -e "AUTOFLOW_DOMAIN=$AF_DOMAIN" -e "BASIC_USER=$(get_env BASIC_USER)" -e "BASIC_HASH=${bh//\$\$/\$}" \
      caddy:2.8-alpine caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
   log "Конфигурация Caddy из коммита ${sha:0:7} не прошла проверку — выкат отменён, продолжает работать прежняя версия"
   echo "$sha" > "$APP/.failed_sha"; rm -rf "$CAND"; exit 1
@@ -144,6 +177,10 @@ install_caddy_file "$SRC/infra/caddy/gate.on.caddy" gate.on.caddy
 install_caddy_file "$SRC/infra/caddy/gate.off.caddy" gate.off.caddy
 if [ -n "$(get_env BASIC_HASH)" ]; then gate=gate.on.caddy; else gate=gate.off.caddy; fi
 install_caddy_file "$APP/caddy/$gate" gate.caddy
+# AutoFlow: варианты кладём всегда, а рабочий autoflow.caddy — «выключен», пока не поднят образ (см. шаг 6); так Caddyfile
+# с `import autoflow.caddy` никогда не остаётся без файла.
+for f in autoflow.on.caddy autoflow.off.caddy; do [ -f "$SRC/infra/caddy/$f" ] && install_caddy_file "$SRC/infra/caddy/$f" "$f"; done
+[ -f "$APP/caddy/autoflow.caddy" ] || install_caddy_file "$APP/caddy/autoflow.off.caddy" autoflow.caddy
 rm -f "$APP/Caddyfile"   # старое расположение (до ADR-015)
 
 # 4. Нужен ли api в этом коммите?
@@ -169,24 +206,51 @@ if [ "$API_NOW" -eq 1 ]; then
   if ! docker build -t "$apiimg" -f "$SRC/apps/api/Dockerfile" "$SRC/apps/api"; then
     log "Сборка api не удалась для ${sha:0:7}"; echo "$sha" > "$APP/.failed_sha"; exit 1
   fi
-  set_env COMPOSE_PROFILES api
+  profile_add api
 else
   log "apps/api/Dockerfile нет — запускаются только web и caddy"
 fi
+# AutoFlow: третий образ только когда он включён (AUTOFLOW_DOMAIN) и есть в коммите
+afimg=""
+if [ "$AF_NOW" -eq 1 ]; then
+  afimg="lh-autoflow:${sha:0:12}"
+  log "Сборка образа $afimg (AutoFlow, домен $AF_DOMAIN)"
+  af_args=(--build-arg "NEXT_PUBLIC_SITE_URL=https://$AF_DOMAIN")
+  for pair in NEXT_PUBLIC_CONTACT_EMAIL:AUTOFLOW_CONTACT_EMAIL NEXT_PUBLIC_CONTACT_TELEGRAM:AUTOFLOW_CONTACT_TELEGRAM NEXT_PUBLIC_OPERATOR_NAME:AUTOFLOW_OPERATOR_NAME; do
+    v="$(get_env "${pair#*:}")"; v="${v//\$\$/\$}"
+    [ -n "$v" ] && af_args+=(--build-arg "${pair%%:*}=$v")
+  done
+  if ! docker build -t "$afimg" "${af_args[@]}" -f "$SRC/apps/autoflow-web/Dockerfile" "$SRC"; then
+    log "Сборка autoflow не удалась для ${sha:0:7}"; echo "$sha" > "$APP/.failed_sha"; exit 1
+  fi
+  profile_add autoflow
+else
+  af_wanted && log "AUTOFLOW_DOMAIN задан, но apps/autoflow-web/Dockerfile в коммите нет — AutoFlow пропущен"
+  profile_del autoflow
+fi
 
 # 6. Выкат и проверка здоровья
-if switch_to "$img" "$apiimg"; then
-  [ -s "$APP/.last_good" ] && cp "$APP/.last_good" "$APP/.prev_good"
-  [ -s "$APP/.last_good_sha" ] && cp "$APP/.last_good_sha" "$APP/.prev_good_sha"
+same_sha=0; [ "$(read_file .last_good_sha)" = "$sha" ] && same_sha=1   # дособирающий проход AutoFlow: «предыдущую» версию не затираем
+if switch_to "$img" "$apiimg" "$afimg"; then
+  if [ "$same_sha" -eq 0 ]; then
+    [ -s "$APP/.last_good" ] && cp "$APP/.last_good" "$APP/.prev_good"
+    [ -s "$APP/.last_good_sha" ] && cp "$APP/.last_good_sha" "$APP/.prev_good_sha"
+  fi
   if [ -n "$apiimg" ]; then
-    [ -s "$APP/.last_good_api" ] && cp "$APP/.last_good_api" "$APP/.prev_good_api"
+    [ "$same_sha" -eq 0 ] && [ -s "$APP/.last_good_api" ] && cp "$APP/.last_good_api" "$APP/.prev_good_api"
     echo "$apiimg" > "$APP/.last_good_api"
   fi
+  if [ -n "$afimg" ]; then
+    [ "$same_sha" -eq 0 ] && [ -s "$APP/.last_good_af" ] && cp "$APP/.last_good_af" "$APP/.prev_good_af"
+    echo "$afimg" > "$APP/.last_good_af"
+  fi
+  # рабочий autoflow.caddy: включаем сайт AutoFlow только когда его образ поднят и здоров
+  if [ -n "$afimg" ]; then install_caddy_file "$APP/caddy/autoflow.on.caddy" autoflow.caddy; else install_caddy_file "$APP/caddy/autoflow.off.caddy" autoflow.caddy; fi
   echo "$img" > "$APP/.last_good"; echo "$sha" > "$APP/.last_good_sha"; rm -f "$APP/.failed_sha"
   log "Готово: работает коммит ${sha:0:7}"
   [ "$CADDY_CHANGED" -eq 1 ] && { compose restart caddy >/dev/null 2>&1 || log "Не удалось перезапустить caddy (конфигурация применится при следующем запуске)"; }
   # чистка: оставляем 3 последних образа каждого репозитория и ограничиваем кэш сборки
-  for repo in lh-web lh-api; do
+  for repo in lh-web lh-api lh-autoflow; do
     docker image ls "$repo" --format '{{.Repository}}:{{.Tag}}' | tail -n +4 | xargs -r docker rmi >/dev/null 2>&1 || true
   done
   docker builder prune -f --keep-storage 2GB >/dev/null 2>&1 || true

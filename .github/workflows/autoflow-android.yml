@@ -1,0 +1,66 @@
+name: AutoFlow Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['apps/autoflow-android/**', '.github/workflows/autoflow-android.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autoflow-android-${{ github.ref }}
+  cancel-in-progress: true
+
+# Приложение — оболочка вокруг https://autoflow.vaylonet.ru (адрес можно сменить переменной репозитория AUTOFLOW_URL):
+# весь интерфейс и логика обновляются вместе с сайтом. APK прикладывается к GitHub Release с тегом autoflow-android-N.
+# Ключ подписи создаётся на лету: каждая сборка подписана новым ключом, поэтому поверх установленной версии
+# APK обновить нельзя — сначала удалите старое приложение. Workflow независим от android.yml (LeadHunter).
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: pnpm install --frozen-lockfile
+      - name: Синхронизация Capacitor
+        env:
+          AUTOFLOW_URL: ${{ vars.AUTOFLOW_URL }}
+        run: pnpm --filter autoflow-android sync
+      - name: Ключ подписи (временный) и сборка
+        working-directory: apps/autoflow-android/android
+        run: |
+          KPASS="$(openssl rand -hex 16)"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/af.jks" -alias autoflow -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$KPASS" -keypass "$KPASS" -dname "CN=AutoFlow, O=AutoFlow, C=RU"
+          AF_KEYSTORE="$RUNNER_TEMP/af.jks" AF_KS_PASS="$KPASS" ./gradlew --no-daemon assembleRelease
+      - name: Проверка подписи
+        run: |
+          APK=apps/autoflow-android/android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --print-certs "$APK"
+          cp "$APK" AutoFlow.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoFlow-apk
+          path: AutoFlow.apk
+          retention-days: 30
+      - name: Публикация в Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: autoflow-android-${{ github.run_number }}
+        run: |
+          gh release create "$TAG" AutoFlow.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+            --title "AutoFlow Android $TAG" \
+            --notes "APK приложения AutoFlow (оболочка сайта автосервиса AutoFlow). Коммит: $GITHUB_SHA. Ключ подписи временный: перед установкой новой версии удалите старую."

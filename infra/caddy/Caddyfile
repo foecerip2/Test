@@ -1,3 +1,9 @@
+# AutoFlow на отдельном домене (необязательно). autoflow.caddy — копия autoflow.on.caddy (если AUTOFLOW_DOMAIN задан и образ
+# autoflow собран) или autoflow.off.caddy (пустая заглушка): без AUTOFLOW_DOMAIN Caddy даже не пытается получать сертификат.
+# Выбор делают lh-update / `lh-config autoflow`.
+# Маска (а не точное имя): если файла ещё нет (старая версия lh-update его не ставит), Caddy лишь предупреждает, а не падает.
+import /etc/caddy/autoflow.caddy*
+
 {$DOMAIN} {
 	encode zstd gzip
 

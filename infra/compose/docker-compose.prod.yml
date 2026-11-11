@@ -1,5 +1,6 @@
 # VPS-1 (1 ядро, ~1.9 ГБ RAM). Сервисы: web + caddy всегда; db + api — профиль `api`
-# (lh-update прописывает COMPOSE_PROFILES=api в .env, когда в коммите есть apps/api/Dockerfile).
+# (lh-update прописывает COMPOSE_PROFILES=api в .env, когда в коммите есть apps/api/Dockerfile);
+# autoflow-web — профиль `autoflow` (COMPOSE_PROFILES=api,autoflow, когда задан AUTOFLOW_DOMAIN).
 #
 # Бюджет памяти (mem_limit — потолок, обычно потребление ниже):
 #   web 384 + api 256 + worker 192 + db 256 + caddy 96 = 1184 МБ; на ОС, docker, lh-update и page cache остаётся ~700 МБ из 1.9 ГБ.
@@ -155,6 +156,29 @@ services:
     logging: *logging
     networks: [internal]
 
+  # AutoFlow (лендинг, отдельный контур): профиль `autoflow`, включается `lh-config autoflow DOMAIN` (AUTOFLOW_DOMAIN в .env).
+  # Порты не публикуются; доступен только Caddy по сети compose. +192 МБ к бюджету памяти (итого потолки ~1,18 ГБ).
+  autoflow-web:
+    profiles: ["autoflow"]
+    image: ${AUTOFLOW_IMAGE:-lh-autoflow:none}
+    pull_policy: never   # образ собирается на сервере службой lh-update
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/apps/autoflow-web/.next/cache
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging: *logging
+    networks: [internal]
+
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
@@ -166,6 +190,8 @@ services:
       - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN не задан}
+      # Пусто = AutoFlow выключен (см. autoflow.caddy: Caddy не создаёт сайт и не запрашивает сертификат)
+      AUTOFLOW_DOMAIN: ${AUTOFLOW_DOMAIN:-}
       # Шлюз basic-auth включается, только если BASIC_HASH непустой (см. gate.caddy, его выбирают lh-update/lh-config)
       BASIC_USER: ${BASIC_USER:-owner}
       BASIC_HASH: ${BASIC_HASH:-}

@@ -10,6 +10,7 @@
 #   lh-config restart                 — пересоздать контейнер api (применить .env)
 #   lh-config gate on|off             — включить/выключить необязательный пароль-шлюз basic-auth перед сайтом
 #   lh-config init [--domain D]       — создать недостающие значения в .env (секреты генерируются; существующие не трогаются)
+#   lh-config autoflow DOMAIN|off     — включить AutoFlow на отдельном домене (autoflow.vaylonet.ru) или выключить
 set -euo pipefail
 
 APP="${LH_APP:-/opt/leadhunter}"
@@ -63,8 +64,18 @@ valid_secret() {   # пароль: без управляющих символо�
   return 0
 }
 
+# COMPOSE_PROFILES — список через запятую (api, autoflow)
+has_profile() { case ",$(get_kv COMPOSE_PROFILES)," in *",$1,"*) return 0 ;; esac; return 1; }
+profile_add() { local cur; has_profile "$1" && return 0; cur="$(get_kv COMPOSE_PROFILES)"; set_kv COMPOSE_PROFILES "${cur:+$cur,}$1"; }
+profile_del() {
+  local out="" p arr=(); has_profile "$1" || return 0
+  IFS=, read -ra arr <<<"$(get_kv COMPOSE_PROFILES)"
+  for p in "${arr[@]}"; do [ "$p" = "$1" ] || out="${out:+$out,}$p"; done
+  set_kv COMPOSE_PROFILES "$out"
+}
+
 restart_api() {
-  [ "$(get_kv COMPOSE_PROFILES)" = "api" ] || die "api не включён (в .env нет COMPOSE_PROFILES=api): сначала должна пройти установка/обновление"
+  has_profile api || die "api не включён (в .env нет api в COMPOSE_PROFILES): сначала должна пройти установка/обновление"
   compose up -d --no-deps --force-recreate api
 }
 
@@ -186,6 +197,8 @@ cmd_show() {
   if [ -n "$(get_kv BASIC_HASH)" ]; then gate="включён (логин $(get_kv BASIC_USER))"; else gate="выключен"; fi
   printf '%-16s %s\n' "Шлюз (basic)" "$gate"
   for k in COMPOSE_PROFILES WEB_IMAGE API_IMAGE; do printf '%-16s %s\n' "$k" "$(get_kv "$k")"; done
+  printf '%-16s %s\n' AUTOFLOW_DOMAIN "$(if [ -n "$(get_kv AUTOFLOW_DOMAIN)" ]; then get_kv AUTOFLOW_DOMAIN; else echo '(выключен)'; fi)"
+  printf '%-16s %s\n' AUTOFLOW_IMAGE "$(get_kv AUTOFLOW_IMAGE)"
   if [ "$(get_kv MAIL_BACKEND)" = http ]; then
     [ -n "$(get_kv MAIL_RELAY_SECRET)" ] && [ -n "$(get_kv MAIL_RELAY_URL)" ] || { say; say "Ретранслятор не настроен. Выполните: lh-config mail-relay"; }
   elif [ -z "$(get_kv SMTP_HOST)" ]; then say; say "Почта не настроена: регистрация отвечает 503 MAIL_UNAVAILABLE. Выполните: lh-config mail-relay (или lh-config smtp)"; fi
@@ -214,6 +227,34 @@ cmd_gate() {
   say "Шлюз: $1"
 }
 
+valid_domain() {   # полное доменное имя в нижнем регистре, минимум одна точка, не совпадает с основным DOMAIN
+  [ "${#1}" -le 253 ] && [[ "$1" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]]
+}
+
+cmd_autoflow() {
+  local arg="${1:-}" d
+  case "$arg" in
+    "") die "Использование: lh-config autoflow DOMAIN (например autoflow.vaylonet.ru) | off" ;;
+    off)
+      lock; set_kv AUTOFLOW_DOMAIN ""; profile_del autoflow
+      [ -f "$APP/caddy/autoflow.off.caddy" ] && install -m 0644 "$APP/caddy/autoflow.off.caddy" "$APP/caddy/autoflow.caddy"
+      compose stop autoflow-web >/dev/null 2>&1 || true
+      compose rm -f autoflow-web >/dev/null 2>&1 || true
+      compose up -d --no-deps --force-recreate caddy
+      say "AutoFlow выключен: контейнер остановлен, Caddy больше не обслуживает его домен. LeadHunter не затронут." ;;
+    *)
+      d="${arg,,}"
+      valid_domain "$d" || die "Некорректный домен «$arg». Пример: lh-config autoflow autoflow.vaylonet.ru"
+      [ "$d" != "$(get_kv DOMAIN)" ] || die "AutoFlow должен жить на отдельном домене, не на $(get_kv DOMAIN)"
+      lock; set_kv AUTOFLOW_DOMAIN "$d"; profile_add autoflow
+      say "AutoFlow включён: AUTOFLOW_DOMAIN=$d (записано в $ENVF, права 0600)."
+      say "Дальше:"
+      say "  1) DNS: A-запись $d → IP этого сервера (до этого Caddy не выдаст сертификат; остальной сайт работает как прежде)."
+      say "  2) Образ соберёт и запустит служба lh-update в течение ~3 минут (сразу: lh-update; ход: journalctl -u lh-update -n 50)."
+      say "  3) Проверка: lh-config show  и  https://$d" ;;
+  esac
+}
+
 rand_hex() { openssl rand -hex "$1"; }
 
 cmd_init() {
@@ -233,7 +274,7 @@ cmd_init() {
   # console-почта в prod запрещена: пока SMTP не задан, api отвечает 503 MAIL_UNAVAILABLE
   if [ -z "$(get_kv MAIL_BACKEND)" ] || [ "$(get_kv MAIL_BACKEND)" = console ]; then set_kv MAIL_BACKEND smtp; fi
   fill SMTP_SECURITY ssl
-  for k in OWNER_EMAIL MAIL_RELAY_URL MAIL_RELAY_SECRET SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD SMTP_FROM BASIC_HASH WEB_IMAGE API_IMAGE; do
+  for k in OWNER_EMAIL MAIL_RELAY_URL MAIL_RELAY_SECRET SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD SMTP_FROM BASIC_HASH WEB_IMAGE API_IMAGE AUTOFLOW_DOMAIN AUTOFLOW_IMAGE; do
     grep -qE "^$k=" "$ENVF" || set_kv "$k" ""
   done
   fill BASIC_USER owner
@@ -250,5 +291,6 @@ case "${1:-}" in
   restart) restart_api ;;
   gate) shift; cmd_gate "${1:-}" ;;
   init) shift; cmd_init "$@" ;;
-  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  autoflow) shift; cmd_autoflow "${1:-}" ;;
+  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
