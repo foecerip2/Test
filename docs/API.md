@@ -149,6 +149,55 @@ Commit (`dry_run=false`) не принимает от клиента ни `issue
 
 `companies_week` — создано за 7 суток; `suitable` — `score ≥ порога`, без отклонённых и отказов; `top_companies` — до 4 лучших (без отклонённых и отказов); `recent` — 5 последних событий. Порог — `SCORE_THRESHOLD` (по умолчанию 75). Показатели, которых в БД пока нет (черновики, диалоги, задачи), в ответ не включены — UI должен их скрывать, а не рисовать нули.
 
+## Проверка сайтов, очередь, кампании, источники (Фаза 3)
+
+Все эндпоинты — для активного пользователя (401 / 403 `ACCOUNT_PENDING`), мутации — с CSRF и записью в `audit_logs`. Ответы — snake_case, даты ISO 8601 UTC. Задачи выполняет отдельный процесс `python -m app.worker` (очередь в PostgreSQL, ADR-017); сам API сайты не загружает.
+
+### `POST /companies/{id}/enrich` (CSRF) → `202 {"job_id": "uuid"}`
+Ставит задачу `enrich_company`. `404` — нет компании; `422 NO_WEBSITE` — у компании нет сайта; `409 JOB_ALREADY_ACTIVE` (+ `job_id` существующей) — задача для этой компании уже в очереди или выполняется. Аудит: `company.enrich`.
+
+Что делает задача: главная + до 4 внутренних страниц того же сайта (запись, контакты, услуги/цены), robots.txt, не чаще 1 запроса в 2 с. Старые факты источника `website` заменяются новыми; оценка пересчитывается по rules-v1; в историю пишутся `company.site_checked` и (если оценка изменилась) `company.score_recalculated`. Итог в `result` задачи:
+
+```json
+{"outcome": "checked|unreachable|skipped", "pages_checked": 4, "facts": 12, "score_before": 35, "score_after": 85,
+ "site_works": true, "online_booking": "detected|not_detected|not_checked", "demand_signals": 3,
+ "has_business_contact": true, "error_code": null}
+```
+`skipped` (robots запрещает, адрес недопустим, редирект на другой домен) — оценка не меняется. `online_booking = not_detected` — «не обнаружена», это не доказательство отсутствия. Телефоны и e-mail организации НЕ сохраняются: в карточке (`facts`) только «Опубликован телефон/e-mail организации» со ссылкой на страницу и маскированной выдержкой. Факты `confirmed` всегда с `evidence_url` и выдержкой ≤ 200 символов, остальное — `hypothesis`.
+
+### `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` (CSRF)
+Параметры списка: `state` (`queued|running|succeeded|failed|cancelled`), `type` (сейчас только `enrich_company`), `limit` (1–200, по умолчанию 50), `cursor`. Сортировка — новые первыми; курсор непрозрачный, чужой/повреждённый — `422 INVALID_CURSOR`.
+
+```json
+{"items": [Job, …], "has_more": false, "next_cursor": null}
+Job = {"id": "uuid", "type": "enrich_company", "state": "queued", "attempts": 0, "max_attempts": 3,
+  "run_after": "…", "created_at": "…", "updated_at": "…", "cancel_requested": false,
+  "company_id": "uuid|null", "campaign_id": "uuid|null", "last_error": null, "result": null}
+```
+`last_error` — без секретов и персональных данных. Повторы: максимум 3 попытки, задержка 30 с · 2^(n−1) ± 25 %; постоянные ошибки (нет сайта, неверные данные) не повторяются. `cancel`: `queued` → `cancelled` сразу; `running` → `cancel_requested=true`, воркер остановится между шагами (состояние станет `cancelled`); завершённая задача — `409 JOB_NOT_CANCELLABLE` (+ `state`). Аудит: `job.cancel`.
+
+### Кампании
+`POST /campaigns` (201), `GET /campaigns` → `{"items": [Campaign]}`, `GET /campaigns/{id}`, `PATCH /campaigns/{id}` `{"status": "paused"|"running"}`, `POST /campaigns/{id}/run`.
+
+```json
+{"name": "Казань, автосервисы", "regions": ["Казань"], "categories": ["автосервис"],
+ "filter": {"score_min": 40}, "per_day_limit": 50}
+Campaign = {"id": "uuid", "name": "…", "regions": [], "categories": [], "filter": {"score_min": null},
+  "per_day_limit": 50, "status": "running|paused|done",
+  "progress": {"enqueued_total": 10, "enqueued_today": 4, "last_run_at": "…|null", "jobs": {"queued": 2, "succeeded": 8}},
+  "created_at": "…", "updated_at": "…"}
+```
+Ограничения: имя 1–120 символов, `regions`/`categories` ≤ 50 элементов, `per_day_limit` 1–1000, лишние поля — 422. `run` → `{"enqueued": 2, "skipped_active": 0, "remaining_today": 8, "status": "running"}`: ставит задачи для НЕпроверенных компаний (есть сайт; нет события `company.site_checked`; не отклонены, не «отказ»; город из `regions` (нормализуется) или регион; категория содержит одну из `categories` без учёта регистра; оценка ≥ `score_min`), по убыванию оценки, не более `per_day_limit` за UTC-сутки, без дублей (`skipped_active`). Приостановленная/завершённая кампания — `409 CAMPAIGN_NOT_RUNNING`. Когда подходящих компаний не осталось и задач нет, статус становится `done`. Задачи ставятся только вызовом `run` (автозапуска по расписанию пока нет). Аудит: `campaign.create|pause|resume|run`.
+
+### `GET /sources`
+```json
+{"items": [{"id": "csv", "name": "…", "enabled": true, "description": "…", "rules": ["…"],
+  "retention_days": 365, "disabled_reason": null},
+ {"id": "public_websites", …, "enabled": true}, {"id": "catalogs", …, "enabled": false,
+  "retention_days": null, "disabled_reason": "Включается только после проверки лицензии и условий источника."}]}
+```
+Подробности — `docs/SOURCES_AND_LICENSES.md`. Меры защиты загрузчика — `docs/SECURITY.md`.
+
 ## Здоровье (без авторизации, вне префикса)
 
 - `GET /healthz` — liveness; `GET /readyz` — проверка БД.
@@ -169,6 +218,12 @@ Commit (`dry_run=false`) не принимает от клиента ни `issue
 | `TRUST_PROXY_HEADERS` | `true` в prod | брать IP клиента из последней записи `X-Forwarded-For` (API должен быть доступен только через reverse proxy) |
 | `OWNER_EMAIL` | пусто | email владельца |
 | `SCORE_THRESHOLD` | `75` | порог оценки «подходит для работы» (0–100) для дашборда |
+| `DATA_RETENTION_DAYS` | `365` | срок хранения данных источников (показывается в `/sources`; автоочистки пока нет) |
+| `WORKER_CONCURRENCY` | `1` | число потоков воркера (1–2) |
+| `WORKER_POLL_SECONDS` | `2` | пауза опроса пустой очереди |
+| `JOB_LOCK_TIMEOUT_SECONDS` | `300` | через сколько «зависшая» задача возвращается в очередь |
+| `WORKER_HEARTBEAT_FILE` | `/tmp/lh-worker.heartbeat` | файл для healthcheck воркера (`python -m app.worker --healthcheck`) |
+| `ALLOW_PRIVATE_FETCH_FOR_TESTS` | `false` | только `ENV=dev`: отключает проверку адресов при загрузке сайтов (тесты на localhost); в prod — ошибка конфигурации |
 | `MAIL_BACKEND` | `console` | `http` (HTTPS-ретранслятор, основной в prod), `smtp` или `console`; `console` запрещён в prod |
 | `MAIL_RELAY_URL` | — | для `http`: адрес ретранслятора, в prod только `https://`, например `https://vaylonet.ru/lh-mail.php` |
 | `MAIL_RELAY_SECRET` | — | для `http`: общий секрет HMAC, ≥ 32 символов; не попадает в repr/логи |

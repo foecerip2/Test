@@ -2,7 +2,7 @@
 # (lh-update прописывает COMPOSE_PROFILES=api в .env, когда в коммите есть apps/api/Dockerfile).
 #
 # Бюджет памяти (mem_limit — потолок, обычно потребление ниже):
-#   web 384 + api 256 + db 256 + caddy 96 = 992 МБ; на ОС, docker, lh-update и page cache остаётся ~900 МБ из 1.9 ГБ.
+#   web 384 + api 256 + worker 192 + db 256 + caddy 96 = 1184 МБ; на ОС, docker, lh-update и page cache остаётся ~700 МБ из 1.9 ГБ.
 #   Сборка образов (node до ~1 ГБ) идёт на самом сервере поверх работающего стека, поэтому нужен swap 3 ГБ (ставит install.sh).
 name: leadhunter
 
@@ -87,6 +87,51 @@ services:
       timeout: 6s
       retries: 6
       start_period: 40s   # на старте контейнер применяет alembic upgrade head
+    logging: *logging
+    networks: [internal]
+
+  # Воркер очереди задач (ADR-017): проверка сайтов компаний. Тот же образ, что и api; миграции НЕ
+  # применяет (их делает api при старте), поэтому ждёт здоровый api. Наружу портов нет.
+  worker:
+    profiles: ["api"]
+    image: ${API_IMAGE:-lh-api:none}
+    pull_policy: never   # образ собирается на сервере службой lh-update
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp   # здесь лежит heartbeat-файл воркера
+    environment:
+      ENV: prod
+      DATABASE_URL: ${DATABASE_URL:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      MAIL_BACKEND: ${MAIL_BACKEND:-smtp}
+      MAIL_RELAY_URL: ${MAIL_RELAY_URL:-}
+      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-ssl}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+    depends_on:
+      db: { condition: service_healthy }
+      api: { condition: service_healthy }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 192m
+    stop_grace_period: 40s   # SIGTERM: текущая задача возвращается в очередь на ближайшей проверке
+    healthcheck:
+      # heartbeat-файл обновляется раз в 15 с, только если БД отвечает; порог свежести — 90 с
+      test: ["CMD", "python", "-m", "app.worker", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     logging: *logging
     networks: [internal]
 

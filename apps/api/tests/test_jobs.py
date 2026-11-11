@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import threading
 import uuid
 from collections.abc import Iterator
@@ -31,11 +33,17 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
 
 @pytest.fixture
 def factory(tmp_path: Path) -> Iterator[sessionmaker[Session]]:
-    engine = sa.create_engine(
-        f"sqlite+pysqlite:///{tmp_path}/queue.db",
-        connect_args={"check_same_thread": False, "timeout": 30},
-    )
-    Base.metadata.create_all(engine)
+    pg = os.environ.get("TEST_POSTGRES_URL")
+    if pg:  # те же тесты очереди на реальной PostgreSQL
+        engine = sa.create_engine(pg, pool_size=12, max_overflow=4)
+        Base.metadata.drop_all(engine)
+        Base.metadata.create_all(engine)
+    else:
+        engine = sa.create_engine(
+            f"sqlite+pysqlite:///{tmp_path}/queue.db",
+            connect_args={"check_same_thread": False, "timeout": 30},
+        )
+        Base.metadata.create_all(engine)
     yield make_session_factory(engine)
     engine.dispose()
 
@@ -146,7 +154,8 @@ def test_claim_marks_running_and_counts_attempt(db: Session, clock: Clock) -> No
 def test_claim_order_by_run_after_then_created(db: Session, clock: Clock) -> None:
     late = add(db, run_after=clock.now() - timedelta(minutes=1))
     early = add(db, run_after=clock.now() - timedelta(minutes=10))
-    first = add(db, run_after=clock.now() - timedelta(minutes=10))
+    clock.advance(1)  # created_at различаются: при равных run_after порядок — по созданию
+    first = add(db, run_after=reload(db, early.id).run_after)
     order = []
     while (j := jobs.claim(db, "w", lock_timeout=LOCK)) is not None:
         order.append(j.id)
@@ -442,10 +451,8 @@ def test_cancel_racing_with_claim_never_loses_the_request(factory: sessionmaker[
         def do_cancel(jid: uuid.UUID = jid, barrier: threading.Barrier = barrier) -> None:
             with factory() as s:
                 barrier.wait()
-                try:
+                with contextlib.suppress(jobs.JobStateError):
                     jobs.cancel(s, jid)
-                except jobs.JobStateError:
-                    pass
 
         def do_claim(barrier: threading.Barrier = barrier) -> None:
             with factory() as s:
@@ -496,7 +503,7 @@ def test_fail_stores_sanitized_error(db: Session) -> None:
 
 def test_list_jobs_filters_and_pages(db: Session, clock: Clock) -> None:
     ids = []
-    for i in range(5):
+    for _ in range(5):
         clock.advance(1)
         ids.append(add(db).id)
     clock.advance(1)

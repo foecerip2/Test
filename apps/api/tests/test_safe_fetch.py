@@ -337,9 +337,7 @@ def public_fetcher(
     **kw: object,
 ) -> SafeFetcher:
     """Адреса проверяются по-настоящему, но TCP уходит на локальный сервер."""
-    return _fetcher(
-        resolver=resolver or (lambda h: [PUBLIC]), connector=site.connector(), **kw
-    )
+    return _fetcher(resolver=resolver or (lambda h: [PUBLIC]), connector=site.connector(), **kw)
 
 
 def local_fetcher(site: LocalSite, **kw: object) -> SafeFetcher:
@@ -406,7 +404,9 @@ def test_rebinding_to_private_on_next_resolution_is_blocked(site: LocalSite) -> 
     conn = site.connector()
     f = _fetcher(resolver=lambda h: next(answers), connector=conn)
     with pytest.raises(FetchError) as e:
-        f.fetch_page("http://rebind.test/")  # robots.txt — публичный адрес, страница — уже приватный
+        f.fetch_page(
+            "http://rebind.test/"
+        )  # robots.txt — публичный адрес, страница — уже приватный
     assert e.value.code == "host_blocked"
     assert conn.seen == [PUBLIC]  # type: ignore[attr-defined]  # к приватному адресу соединения не было
 
@@ -525,7 +525,9 @@ def test_redirect_fragment_is_dropped(site: LocalSite) -> None:
 
 
 def test_redirect_target_is_checked_against_robots(site: LocalSite) -> None:
-    site.routes["/robots.txt"] = Resp(content_type="text/plain", body=b"User-agent: *\nDisallow: /secret\n")
+    site.routes["/robots.txt"] = Resp(
+        content_type="text/plain", body=b"User-agent: *\nDisallow: /secret\n"
+    )
     site.routes["/go"] = redirect("/secret/page")
     f = public_fetcher(site)
     with pytest.raises(FetchError) as e:
@@ -663,8 +665,16 @@ def test_unsupported_encoding_rejected(site: LocalSite) -> None:
 
 @pytest.mark.parametrize(
     "ctype",
-    ["application/pdf", "image/png", "application/json", "text/plain", "application/octet-stream",
-     "video/mp4", "text/javascript", None]  # fmt: skip
+    [
+        "application/pdf",
+        "image/png",
+        "application/json",
+        "text/plain",
+        "application/octet-stream",
+        "video/mp4",
+        "text/javascript",
+        None,
+    ],  # fmt: skip
 )
 def test_non_html_content_type_rejected(site: LocalSite, ctype: str | None) -> None:
     site.routes["/f"] = Resp(body=b"%PDF-1.4", content_type=ctype)
@@ -674,7 +684,8 @@ def test_non_html_content_type_rejected(site: LocalSite, ctype: str | None) -> N
 
 
 @pytest.mark.parametrize(
-    "ctype", ["text/html", "TEXT/HTML; charset=windows-1251", "application/xhtml+xml; charset=utf-8"]
+    "ctype",
+    ["text/html", "TEXT/HTML; charset=windows-1251", "application/xhtml+xml; charset=utf-8"],
 )
 def test_html_content_types_accepted(site: LocalSite, ctype: str) -> None:
     site.routes["/f"] = Resp(body=b"<html>ok</html>", content_type=ctype)
@@ -813,7 +824,9 @@ def test_robots_cache_is_per_domain(site: LocalSite) -> None:
 
 def test_robots_redirect_is_followed_with_checks(site: LocalSite) -> None:
     site.routes["/robots.txt"] = redirect("/rules.txt")
-    site.routes["/rules.txt"] = Resp(content_type="text/plain", body=b"User-agent: *\nDisallow: /\n")
+    site.routes["/rules.txt"] = Resp(
+        content_type="text/plain", body=b"User-agent: *\nDisallow: /\n"
+    )
     with pytest.raises(FetchError) as e:
         public_fetcher(site).fetch_page("http://shop.test/")
     assert e.value.code == "robots_disallowed"
@@ -904,7 +917,13 @@ def test_throttle_concurrent_callers_get_distinct_slots() -> None:
         t.start()
     for t in threads:
         t.join()
-    assert sorted(slots) == [2.0, 4.0, 6.0, 8.0, 10.0]  # шестой вызов — без ожидания, остальные по очереди
+    assert sorted(slots) == [
+        2.0,
+        4.0,
+        6.0,
+        8.0,
+        10.0,
+    ]  # шестой вызов — без ожидания, остальные по очереди
 
 
 def test_fetcher_waits_between_requests_to_one_domain(site: LocalSite) -> None:
@@ -913,7 +932,9 @@ def test_fetcher_waits_between_requests_to_one_domain(site: LocalSite) -> None:
     f.fetch_page("http://shop.test/")  # robots + страница
     f.fetch_page("http://shop.test/")  # ещё страница (robots из кэша)
     assert ft.sleeps == [2.0, 2.0]
-    f.fetch_page("http://other.test/")  # другой домен: свой robots.txt, но без ожидания между доменами
+    f.fetch_page(
+        "http://other.test/"
+    )  # другой домен: свой robots.txt, но без ожидания между доменами
     assert ft.sleeps[:2] == [2.0, 2.0]
 
 
@@ -925,7 +946,9 @@ def test_page_budget_five_per_domain(site: LocalSite) -> None:
     with pytest.raises(FetchError) as e:
         f.fetch_page("http://shop.test/", budget=budget, respect_robots=False)
     assert e.value.code == "page_budget_exceeded"
-    f.fetch_page("http://other.test/", budget=budget, respect_robots=False)  # другой домен — свой счётчик
+    f.fetch_page(
+        "http://other.test/", budget=budget, respect_robots=False
+    )  # другой домен — свой счётчик
     assert len(site.log) == 6
 
 

@@ -128,7 +128,9 @@ def rich_site(site: LocalSite) -> None:
             "/": page("good.html"),
             "/uslugi": page("prices.html"),
             "/kontakty": page("contacts.html"),
-            "/zapis": text_page("Запись на сервис: выберите удобное время визита для вашего автомобиля."),
+            "/zapis": text_page(
+                "Запись на сервис: выберите удобное время визита для вашего автомобиля."
+            ),
         }
     )
 
@@ -143,7 +145,9 @@ def test_rich_site_facts_with_evidence_and_rescoring(ctx: Ctx, site: LocalSite) 
 
     res = enrich(ctx, site, cid)
 
-    assert res.outcome == "checked" and res.pages_checked == 4  # главная + /uslugi, /kontakty, /zapis
+    assert (
+        res.outcome == "checked" and res.pages_checked == 4
+    )  # главная + /uslugi, /kontakty, /zapis
     assert res.site_works and res.online_booking == "detected" and res.has_business_contact
     assert res.demand_signals == 3
     # 25 (тип) + 20 (3 признака спроса, потолок) + 15 (сайт) + 0 (запись обнаружена) + 15 (контакт) + 10
@@ -161,7 +165,9 @@ def test_rich_site_facts_with_evidence_and_rescoring(ctx: Ctx, site: LocalSite) 
 
     rows = facts(ctx, cid)
     keys = by_key(rows)
-    assert {"site", "prices", "hours", "online_booking", "contact:phone", "contact:email"} <= set(keys)
+    assert {"site", "prices", "hours", "online_booking", "contact:phone", "contact:email"} <= set(
+        keys
+    )
     assert {"service:диагностика", "service:шиномонтаж", "service:замена масла"} <= set(keys)
     assert all(r.source == "website" for r in rows)
     for r in rows:
@@ -188,10 +194,10 @@ def test_no_personal_data_is_stored_or_logged(
     with caplog.at_level(logging.DEBUG):
         enrich(ctx, site, cid)
 
-    blob = " | ".join(
-        f"{f.text} {f.evidence_url} {f.evidence_excerpt}" for f in facts(ctx, cid)
-    )
-    for e in events(ctx, cid, "company.site_checked") + events(ctx, cid, "company.score_recalculated"):
+    blob = " | ".join(f"{f.text} {f.evidence_url} {f.evidence_excerpt}" for f in facts(ctx, cid))
+    for e in events(ctx, cid, "company.site_checked") + events(
+        ctx, cid, "company.score_recalculated"
+    ):
         blob += f" | {e.payload_redacted}"
     blob += " | " + " | ".join(r.getMessage() for r in caplog.records)
     for secret in ("sever-avto.example.com", "info@", "contact@", "0000001", "000-00-0", "(900)"):
@@ -238,7 +244,10 @@ def test_empty_site_is_reachable_but_not_working_and_booking_not_checked(
     assert res.online_booking == "not_checked" and res.score_after == 35
     keys = by_key(facts(ctx, cid))
     assert keys["site"].kind == "hypothesis" and "почти не содержит текста" in keys["site"].text
-    assert keys["online_booking"].kind == "hypothesis" and "не проверялась" in keys["online_booking"].text
+    assert (
+        keys["online_booking"].kind == "hypothesis"
+        and "не проверялась" in keys["online_booking"].text
+    )
     assert lead(ctx, cid).inputs["online_booking_detected"] is None
 
 
@@ -277,7 +286,10 @@ def test_injection_text_cannot_influence_result(ctx: Ctx, site: LocalSite) -> No
     res = enrich(ctx, site, cid)
     assert res.score_after != 100 and res.online_booking == "not_detected"
     assert company(ctx, cid).score == res.score_after
-    assert events(ctx, cid, "company.site_checked")[0].payload_redacted["suspicious_instructions"] is True  # type: ignore[index]
+    assert (
+        events(ctx, cid, "company.site_checked")[0].payload_redacted["suspicious_instructions"]
+        is True
+    )  # type: ignore[index]
     for f in facts(ctx, cid):
         blob = f"{f.text} {f.evidence_excerpt}".lower()
         assert "ignore" not in blob and "игнорируй" not in blob and "attacker" not in blob
@@ -337,7 +349,9 @@ def test_transient_error_is_retryable_until_last_attempt(ctx: Ctx, site: LocalSi
 
 
 def test_robots_disallow_skips_site_without_rescoring(ctx: Ctx, site: LocalSite) -> None:
-    site.routes["/robots.txt"] = Resp(content_type="text/plain", body=b"User-agent: *\nDisallow: /\n")
+    site.routes["/robots.txt"] = Resp(
+        content_type="text/plain", body=b"User-agent: *\nDisallow: /\n"
+    )
     site.routes["/"] = page("good.html")
     cid = make_company(ctx, site)
     res = enrich(ctx, site, cid)
@@ -348,7 +362,10 @@ def test_robots_disallow_skips_site_without_rescoring(ctx: Ctx, site: LocalSite)
     assert fact.kind == "hypothesis" and "robots.txt" in fact.text
     assert company(ctx, cid).state == "discovered"
     assert events(ctx, cid, "company.score_recalculated") == []
-    assert events(ctx, cid, "company.site_checked")[0].payload_redacted["error_code"] == "robots_disallowed"  # type: ignore[index]
+    assert (
+        events(ctx, cid, "company.site_checked")[0].payload_redacted["error_code"]
+        == "robots_disallowed"
+    )  # type: ignore[index]
 
 
 def test_robots_may_forbid_only_some_internal_pages(ctx: Ctx, site: LocalSite) -> None:
@@ -377,7 +394,9 @@ def test_private_address_site_is_skipped(ctx: Ctx, site: LocalSite) -> None:
 
 
 def test_redirect_to_other_domain_is_not_used(ctx: Ctx, site: LocalSite) -> None:
-    site.routes["/"] = Resp(status=302, headers={"Location": f"http://elsewhere.test:{site.port}/x"}, content_type=None)
+    site.routes["/"] = Resp(
+        status=302, headers={"Location": f"http://elsewhere.test:{site.port}/x"}, content_type=None
+    )
     site.routes["/x"] = page("good.html")
     cid = make_company(ctx, site)
     res = enrich(ctx, site, cid)
@@ -388,7 +407,9 @@ def test_redirect_to_other_domain_is_not_used(ctx: Ctx, site: LocalSite) -> None
 
 def test_www_redirect_on_same_site_is_fine(ctx: Ctx, site: LocalSite) -> None:
     site.routes["/"] = Resp(
-        status=301, headers={"Location": f"http://www.site.test:{site.port}/home"}, content_type=None
+        status=301,
+        headers={"Location": f"http://www.site.test:{site.port}/home"},
+        content_type=None,
     )
     site.routes["/home"] = page("no_booking.html")
     cid = make_company(ctx, site)
@@ -437,7 +458,9 @@ def test_rerun_replaces_website_facts_and_keeps_others(ctx: Ctx, site: LocalSite
     assert any(r.id == manual for r in rows)  # факты других источников не тронуты
     assert second.score_after == first.score_after
     assert len(events(ctx, cid, "company.site_checked")) == 2
-    assert len(events(ctx, cid, "company.score_recalculated")) == 1  # во второй раз оценка не менялась
+    assert (
+        len(events(ctx, cid, "company.score_recalculated")) == 1
+    )  # во второй раз оценка не менялась
     keys = [r.fact_key for r in rows if r.source == "website"]
     assert len(keys) == len(set(keys))
 
@@ -452,7 +475,9 @@ def test_site_change_between_checks_updates_facts_and_score(ctx: Ctx, site: Loca
     keys = by_key(facts(ctx, cid))
     assert keys["online_booking"].kind == "confirmed"
     assert "contact:email" not in keys  # у нового сайта контактов нет
-    assert [e.payload_redacted["to"] for e in events(ctx, cid, "company.score_recalculated")][-1] == res.score_after  # type: ignore[index]
+    assert [e.payload_redacted["to"] for e in events(ctx, cid, "company.score_recalculated")][
+        -1
+    ] == res.score_after  # type: ignore[index]
 
 
 def test_duplicate_and_refusal_flags_are_preserved(ctx: Ctx, site: LocalSite) -> None:
@@ -465,7 +490,10 @@ def test_duplicate_and_refusal_flags_are_preserved(ctx: Ctx, site: LocalSite) ->
         db.commit()
     enrich(ctx, site, cid)
     assert reasons_of(ctx, cid)["clean"]["points"] == 0
-    assert lead(ctx, cid).inputs["has_refusal"] is True and lead(ctx, cid).inputs["is_duplicate"] is True
+    assert (
+        lead(ctx, cid).inputs["has_refusal"] is True
+        and lead(ctx, cid).inputs["is_duplicate"] is True
+    )
 
 
 def test_rejected_company_keeps_state(ctx: Ctx, site: LocalSite) -> None:
@@ -531,13 +559,21 @@ def test_pick_internal_pages_frames_first_and_none_without_keywords() -> None:
         home, [("https://site.test/a.html", "frame"), ("https://site.test/uslugi", "Услуги")]
     )
     assert picked[0] == "https://site.test/a.html"
-    assert pick_internal_pages(home, [("https://site.test/x", "X"), ("https://site.test/y", "Y")]) == []
+    assert (
+        pick_internal_pages(home, [("https://site.test/x", "X"), ("https://site.test/y", "Y")])
+        == []
+    )
 
 
 def test_make_fact_downgrades_unproven_confirmed() -> None:
     assert make_fact("k", "confirmed", "t", None, "цитата", 0.9).kind == "hypothesis"
-    assert make_fact("k", "confirmed", "t", "https://a.example/p?token=1", "", 0.9).kind == "hypothesis"
-    ok = make_fact("k", "confirmed", "t", "https://a.example/p?token=1#x", "  цитата " + "я" * 400, 0.9)
+    assert (
+        make_fact("k", "confirmed", "t", "https://a.example/p?token=1", "", 0.9).kind
+        == "hypothesis"
+    )
+    ok = make_fact(
+        "k", "confirmed", "t", "https://a.example/p?token=1#x", "  цитата " + "я" * 400, 0.9
+    )
     assert ok.kind == "confirmed" and ok.url == "https://a.example/p"  # запрос и фрагмент отброшены
     assert ok.excerpt is not None and len(ok.excerpt) == 200
 

@@ -159,7 +159,9 @@ def test_deeply_nested_html_is_survived() -> None:
 def test_injection_text_does_not_change_extraction() -> None:
     p = page("injection.html")
     assert p.suspicious_instructions is True
-    assert p.booking == []  # скрытые блоки (display:none, hidden) не считаются, команды не исполняются
+    assert (
+        p.booking == []
+    )  # скрытые блоки (display:none, hidden) не считаются, команды не исполняются
     assert "диагностика" in labels(p.services)
     assert p.hours
     assert labels(p.contacts) == {"phone", "email"}  # адрес из текста — лишь факт наличия
@@ -197,7 +199,9 @@ def test_wrong_header_charset_falls_back() -> None:
 
 
 def test_cp1251_without_any_declaration() -> None:
-    html = "<html><body><p>Шиномонтаж и диагностика автомобилей. Работаем ежедневно.</p></body></html>"
+    html = (
+        "<html><body><p>Шиномонтаж и диагностика автомобилей. Работаем ежедневно.</p></body></html>"
+    )
     p = extract_page(html.encode("cp1251"), URL)
     assert "шиномонтаж" in labels(p.services)
 
@@ -235,13 +239,17 @@ def test_booking_button_is_weak_signal() -> None:
 
 
 def test_call_to_book_by_phone_is_not_booking() -> None:
-    html = '<html><body><a href="tel:+79000000009">Записаться</a> по телефону, звоните!</body></html>'
+    html = (
+        '<html><body><a href="tel:+79000000009">Записаться</a> по телефону, звоните!</body></html>'
+    )
     p = extract_page(html.encode(), URL)
     assert p.booking == []
 
 
 def test_mask_pd_masks_emails_and_phones() -> None:
-    masked = mask_pd("Пишите ivan.petrov@example.com или звоните +7 (900) 123-45-67 / 8 900 123 45 67")
+    masked = mask_pd(
+        "Пишите ivan.petrov@example.com или звоните +7 (900) 123-45-67 / 8 900 123 45 67"
+    )
     assert "@example" not in masked and "123" not in masked
     assert "•••@•••" in masked
 
