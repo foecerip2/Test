@@ -1,3 +1,4 @@
+import { createLiveAdmin } from "./live-admin";
 import { createLiveAuth } from "./live-auth";
 import { createMockApi, type MockOptions } from "./mock";
 import type { Api } from "./types";
@@ -21,9 +22,10 @@ export function getApi(): Api {
       if (flags.includes("fastresend")) opts.fastResend = true;
       if (flags.includes("fastexpire")) opts.fastExpire = true;
       if (flags.includes("mailerror")) opts.mailError = true;
+      if (flags.includes("lastowner")) opts.lastOwner = true;
     }
     const mock = createMockApi(opts);
-    instance = process.env.NEXT_PUBLIC_AUTH_MODE === "live" ? { ...mock, authMode: "live", auth: createLiveAuth() } : mock;
+    instance = process.env.NEXT_PUBLIC_AUTH_MODE === "live" ? { ...mock, authMode: "live", auth: createLiveAuth(), admin: createLiveAdmin() } : mock;
   }
   return instance;
 }

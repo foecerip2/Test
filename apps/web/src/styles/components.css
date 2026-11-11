@@ -205,3 +205,37 @@
   .data-table.cards td:nth-child(5) { grid-area: act; }
   .data-table.cards td:nth-child(5) .link-btn { min-height: 44px; }
 }
+
+/* Пользователи (Настройки → Пользователи) */
+.users-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
+.users-toolbar { border: 0; padding: 0 0 12px; background: transparent; }
+.users-toolbar .select { min-width: 220px; }
+.users-count { margin-left: auto; color: var(--muted); font-size: 0.8125rem; }
+.users-table .u-mail { overflow-wrap: anywhere; word-break: break-word; font-weight: 600; color: var(--ink); }
+.users-table .u-me { margin-left: 8px; vertical-align: middle; }
+.users-table .u-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.users-table .u-reason { margin: 6px 0 0; font-size: 0.75rem; color: var(--muted); line-height: 1.4; }
+.users-table td.u-email { max-width: 320px; }
+.users-table td[data-label="Регистрация"], .users-table td[data-label="Последний вход"] { white-space: nowrap; }
+@media (max-width: 700px) {
+  .users-metrics .metric-label { align-items: flex-start; flex-direction: column-reverse; gap: 6px; }
+  .users-metrics .metric-foot { display: none; }
+  .users-toolbar { flex-wrap: nowrap; }
+  .users-toolbar .select { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .users-count { display: none; }
+  .data-table.cards.users-table tr { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "email email" "status role" "created login" "act act"; gap: 8px 12px; }
+  .data-table.cards.users-table td:nth-child(1) { grid-area: email; }
+  .data-table.cards.users-table td:nth-child(2) { grid-area: role; justify-self: end; color: var(--ink-2); font-size: 0.8125rem; }
+  .data-table.cards.users-table td:nth-child(3) { grid-area: status; justify-self: start; }
+  .data-table.cards.users-table td:nth-child(4) { grid-area: created; justify-self: stretch; }
+  .data-table.cards.users-table td:nth-child(5) { grid-area: login; justify-self: stretch; }
+  .data-table.cards.users-table td:nth-child(6) { grid-area: act; justify-self: stretch; }
+  .users-metrics .metric-label { overflow-wrap: anywhere; hyphens: auto; font-size: 0.75rem; }
+  .users-metrics .metric { padding: 12px 10px; }
+  .data-table.cards.users-table td:nth-child(4), .data-table.cards.users-table td:nth-child(5) { color: var(--ink-2); font-size: 0.8125rem; }
+  .data-table.cards.users-table td[data-label]::before { content: attr(data-label); display: block; font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 800; margin-bottom: 2px; }
+  .data-table.cards.users-table td:nth-child(2)::before { display: none; }
+  .users-table .u-btns .btn { flex: 1 1 140px; min-height: 44px; }
+  .users-table td.u-email { max-width: none; }
+  .users-table td[data-label="Регистрация"], .users-table td[data-label="Последний вход"] { white-space: normal; }
+}
