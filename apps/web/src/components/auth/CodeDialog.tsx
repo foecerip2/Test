@@ -187,7 +187,7 @@ export function CodeDialog({ email, challenge, onClose, onChangeEmail, onDone }:
             </button>
           )}
           <ResendTimer seconds={resendIn} restartKey={resendKey} onResend={resend} busy={resending} primary={blocked} label={blocked ? "Отправить новый код" : "Отправить код ещё раз"} />
-          {api.authMode === "mock" && <div className={s.demo}>Демо: код <b>123456</b></div>}
+          {process.env.NEXT_PUBLIC_DATA_MODE !== "live" && api.authMode === "demo" && <div className={s.demo}>Демо: код <b>123456</b></div>}
         </div>
 
         <div className="sr-only" role="status" aria-live="polite">{live}</div>

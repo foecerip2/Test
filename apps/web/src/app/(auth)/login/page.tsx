@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [challenge, setChallenge] = useState<OtpChallenge | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
-  const demo = getApi().authMode === "mock";
+  const demo = process.env.NEXT_PUBLIC_DATA_MODE !== "live" && getApi().authMode === "demo";
 
   // Уже вошли — сразу в рабочее пространство.
   useEffect(() => { getApi().auth.me().then((u) => { if (u) router.replace("/overview"); }, () => undefined); }, [router]);

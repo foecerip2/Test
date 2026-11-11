@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Children, cloneElement, isValidElement, useRef, type ReactElement, type ReactNode } from "react";
 import { Icon } from "./Icon";
 import type { DisplayStatus, Tone } from "@/lib/api";
-import { ApiError } from "@/lib/api";
+import { ApiError, SOON_TEXT, SOON_TITLE } from "@/lib/api";
 
 export function PageHeader({ eyebrow, title, subtitle, actions }: { eyebrow: string; title: string; subtitle?: string; actions?: ReactNode }) {
   return (
@@ -37,7 +37,6 @@ export function StatusTag({ status, tone, children }: { status?: DisplayStatus; 
   return <span className={`tag ${t === "neutral" ? "" : t}`}>{status?.label ?? children}</span>;
 }
 
-export function DemoTag() { return <span className="tag demo" title="Демонстрационные данные">Демо</span>; }
 
 export function ScoreBadge({ score, threshold = 75 }: { score: number; threshold?: number }) {
   const cls = score >= threshold ? "" : score >= threshold - 15 ? "mid" : "low";
@@ -65,6 +64,12 @@ export function EmptyState({ title, text, action, icon = "info", level = 3 }: { 
       {action}
     </div>
   );
+}
+
+/** Раздел, которого ещё нет на сервере: честное состояние вместо демо-данных и кнопок-пустышек. */
+export function ComingSoon({ title = SOON_TITLE, text = SOON_TEXT, icon = "clock", level = 2, boxed = true }: { title?: string; text?: string; icon?: string; level?: 2 | 3; boxed?: boolean }) {
+  const state = <EmptyState level={level} icon={icon} title={title} text={text} />;
+  return boxed ? <div className="panel" data-testid="coming-soon">{state}</div> : <div data-testid="coming-soon">{state}</div>;
 }
 
 export function ErrorState({ error, onRetry, level = 3 }: { error: Error; onRetry?: () => void; level?: 1 | 2 | 3 }) {

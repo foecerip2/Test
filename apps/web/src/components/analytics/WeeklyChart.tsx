@@ -5,7 +5,7 @@ export function WeeklyChart({ weeks, demo }: { weeks: { label: string; found: nu
   const max = Math.max(1, ...weeks.flatMap((w) => [w.found, w.passed]));
   const summary = weeks.map((w) => `${w.label}: найдено ${w.found}, прошли порог ${w.passed}`).join("; ");
   return (
-    <Panel title="Компании по неделям" subtitle={demo ? "Демо: последние 8 недель" : "Последние 8 недель"}>
+    <Panel title="Компании по неделям" subtitle={demo && process.env.NEXT_PUBLIC_DATA_MODE !== "live" ? "Демо: последние 8 недель" : "Последние 8 недель"}>
       <div className={m.legend}>
         <span><i className={m.sw} style={{ background: "#7a9b8c" }} />Найдено</span>
         <span><i className={m.sw} style={{ background: "var(--accent)" }} />Прошли порог оценки</span>

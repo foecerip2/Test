@@ -60,7 +60,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const me = useQuery((a) => a.auth.me());
   const summary = useQuery((a) => a.summary());
-  const settings = useQuery((a) => a.settings.get());
+  // В рабочем режиме настроек на сервере ещё нет: не запрашиваем и не показываем выдуманные значения.
+  const settings = useQuery(async (a) => (a.mode === "live" ? null : a.settings.get()));
   const pendingUsers = usePendingUsers(me.data?.role === "owner" && me.data.status === "active");
 
   useEffect(() => {
@@ -109,7 +110,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const counts: Record<string, number | undefined> = { companies: s?.companiesTotal, approvals: s?.awaitingApproval, inbox: s?.unread };
   const title = Object.entries(PAGE_TITLES).find(([k]) => path === k || path.startsWith(k + "/"))?.[1] ?? "";
   const isDetail = path.startsWith("/companies/");
-  const mock = getApi().mode === "mock";
+  const mock = process.env.NEXT_PUBLIC_DATA_MODE !== "live";
+  const live = !mock;
   const att = [
     ...(pendingUsers ? [{ id: "n-users", title: pendingText(pendingUsers), text: "Откройте «Настройки → Пользователи», чтобы одобрить или отклонить доступ", href: "/settings?tab=users", tone: "amber" as const }] : []),
     ...(s?.attention ?? []),
@@ -144,8 +146,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="sidebar-spacer" />
         <div className="mode-card">
           <h2>Режим работы</h2>
-          <div className="mode-row"><span>Отправка</span><span className={`tag ${settings.data?.emergencyStopSend === false ? "amber" : "green"}`}>{settings.data ? (settings.data.emergencyStopSend ? "Выключена" : "Включена") : "…"}</span></div>
-          <div className="mode-row"><span>AI</span><span className="tag">{settings.data ? ({ none: "Без AI", api: "Через API", manual: "Вручную" }[settings.data.aiMode]) : "…"}</span></div>
+          {/* Рабочий режим: отправки сообщений в системе нет вовсе — это факт, а не настройка; AI-режима тоже нет. */}
+          <div className="mode-row"><span>Отправка</span><span className={`tag ${settings.data?.emergencyStopSend === false ? "amber" : "green"}`}>{live ? "Выключена" : settings.data ? (settings.data.emergencyStopSend ? "Выключена" : "Включена") : "…"}</span></div>
+          {!live && <div className="mode-row"><span>AI</span><span className="tag">{settings.data ? ({ none: "Без AI", api: "Через API", manual: "Вручную" }[settings.data.aiMode]) : "…"}</span></div>}
           <div className="mode-row"><span>Данные</span><span className={`tag ${mock ? "amber" : "green"}`}>{mock ? "Демо" : "Рабочие"}</span></div>
           <div className="mode-row"><Link href="/settings">Изменить в настройках</Link></div>
         </div>

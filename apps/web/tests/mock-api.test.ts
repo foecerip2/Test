@@ -95,8 +95,9 @@ describe("импорт", () => {
     const prev = await api.imports.preview(csv);
     expect((await api.companies.list({})).total).toBe(before);
     expect(prev.rows[1]!.duplicate?.kind).toBe("exact");
-    const res = await api.imports.commit(prev.rows);
-    expect(res).toEqual({ added: 1, skipped: 1 });
+    expect(prev.summary).toMatchObject({ total: 2, importable: 1, exact: 1 });
+    const res = await api.imports.commit(csv);
+    expect(res).toMatchObject({ added: 1, skipped: 1, rowsTotal: 2 });
     expect((await api.companies.list({})).total).toBe(before + 1);
   });
 });
@@ -106,7 +107,7 @@ describe("режим пустых данных", () => {
     const e = createMockApi({ empty: true });
     const s = await e.summary();
     expect(s.companiesTotal).toBe(0);
-    expect(s.funnel.every((f) => f.count === 0)).toBe(true);
+    expect((s.funnel ?? []).every((f) => f.count === 0)).toBe(true);
   });
 });
 
@@ -128,24 +129,47 @@ describe("замечания ревью: инварианты", () => {
   });
 
   it("ИНН сохраняется при импорте и дедуплицирует следующий импорт", async () => {
-    const first = await api.imports.preview("название;город;инн\nНовая;Тверь;7707083893\n");
-    await api.imports.commit(first.rows);
+    await api.imports.commit("название;город;инн\nНовая;Тверь;7707083893\n");
     const second = await api.imports.preview("название;город;инн\nДругая;Казань;7707083893\n");
     expect(second.rows[0]!.duplicate?.kind).toBe("exact");
   });
 
   it("импортированная компания не получает непроверенных баллов", async () => {
-    const prev = await api.imports.preview("название;город;сайт;категория\nСтоматология Х;Тверь;x.example;Стоматология\n");
-    await api.imports.commit(prev.rows);
+    await api.imports.commit("название;город;сайт;категория\nСтоматология Х;Тверь;x.example;Стоматология\n");
     const c = (await api.companies.list({ query: "Стоматология" })).items[0]!;
     const det = await api.companies.get(c.id);
     expect(det.score).toBeLessThan(25);
     expect(det.scoreReasons.find((r) => r.rule === "site")!.points).toBe(0);
   });
 
-  it("commit не доверяет клиенту: подделанные issues/duplicate перепроверяются", async () => {
-    const forged = [{ line: 2, name: "", city: "Тверь", category: "Автосервис", website: null, inn: null, issues: [], duplicate: null }];
-    expect(await api.imports.commit(forged)).toEqual({ added: 0, skipped: 1 });
+  it("commit разбирает текст заново: строка без названия пропускается", async () => {
+    const res = await api.imports.commit("название;город\n;Тверь\n");
+    expect(res).toMatchObject({ added: 0, skipped: 1 });
+  });
+
+  it("commit без нужных колонок и пустой файл — ошибки как у сервера", async () => {
+    await expect(api.imports.commit("имя;адрес\nА;Б\n")).rejects.toMatchObject({ status: 422, code: "MISSING_COLUMNS" });
+    await expect(api.imports.commit("название;город\n")).rejects.toMatchObject({ status: 422, code: "EMPTY_FILE" });
+  });
+
+  it("список: курсор ведёт по страницам без пропусков и повторов", async () => {
+    const all = (await api.companies.list({ limit: 1000 })).items.map((c) => c.id);
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 20; i++) {
+      const p = await api.companies.list({ limit: 4, cursor });
+      seen.push(...p.items.map((c) => c.id));
+      if (!p.hasMore) { expect(p.nextCursor).toBeNull(); break; }
+      cursor = p.nextCursor ?? undefined;
+    }
+    expect(seen).toEqual(all);
+  });
+
+  it("setStage с expected: чужая правка даёт STAGE_CONFLICT", async () => {
+    const c = (await api.companies.list({})).items.find((x) => x.stage === "new")!;
+    await expect(api.companies.setStage(c.id, "contacted", "pilot")).rejects.toMatchObject({ status: 409, code: "STAGE_CONFLICT" });
+    await api.companies.setStage(c.id, "contacted", "new");
+    expect((await api.companies.get(c.id)).stage).toBe("contacted");
   });
 
   it("settings.patch: только разрешённые поля и серверная валидация", async () => {

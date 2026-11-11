@@ -6,6 +6,7 @@ import { ApprovalGate } from "@/components/approvals/ApprovalGate";
 import { DraftQueue } from "@/components/approvals/DraftQueue";
 import { MessageEditor } from "@/components/approvals/MessageEditor";
 import { Icon } from "@/components/Icon";
+import { SoonPage } from "@/components/SoonPage";
 import { ConfirmDialog } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { Async, EmptyState, LoadingSkeleton, Notice, PageHeader, Panel, ScoreBadge } from "@/components/ui";
@@ -112,6 +113,10 @@ function Approvals() {
 }
 
 export default function ApprovalsPage() {
+  if (process.env.NEXT_PUBLIC_DATA_MODE === "live") {
+    return <SoonPage eyebrow="КАЧЕСТВО И КОММУНИКАЦИИ" title="Согласование" subtitle="Здесь будет очередь черновиков и согласование текста перед отправкой." icon="check"
+      text="Черновики и право отправки ещё не подключены к серверу, поэтому очередь согласования пока недоступна. Отправка сообщений выключена." />;
+  }
   return <Suspense fallback={<LoadingSkeleton rows={6} />}><Approvals /></Suspense>;
 }
 

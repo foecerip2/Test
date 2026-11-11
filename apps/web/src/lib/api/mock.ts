@@ -13,9 +13,22 @@ import { SEED_COMPANIES, SEED_CONVERSATIONS, type SeedCompany } from "./seed";
 import {
   ApiError, type ActivityEvent, type Api, type AuditEntry, type Campaign, type Channel, type Company, type CompanyDetail,
   type CompanyFilter, type Consent, type Contact, type Conversation, type ConversationStage, type CrmStage, type Draft,
-  type DisplayStatus, type Fact, type ImportRow, type Job, type Message, type OutboxPreview, type ReasonCode,
+  type DisplayStatus, type Fact, type ImportRow, type ImportSummary, type Job, type Message, type OutboxPreview, type ReasonCode,
   type Settings, type SourceConfig, type SuppressionEntry, type Task, type Summary,
 } from "./types";
+
+/** Сводка по разбору импорта — те же поля, что у сервера (summary в ответе dry-run). */
+export function summarizeRows(rows: ImportRow[]): ImportSummary {
+  const importable = (r: ImportRow) => !r.issues.length && (r.duplicate === null || r.duplicate.kind === "candidate");
+  return {
+    total: rows.length,
+    importable: rows.filter(importable).length,
+    withIssues: rows.filter((r) => r.issues.length).length,
+    exact: rows.filter((r) => r.duplicate?.kind === "exact").length,
+    inFile: rows.filter((r) => r.duplicate?.kind === "in_file").length,
+    candidates: rows.filter((r) => r.duplicate?.kind === "candidate").length,
+  };
+}
 
 const DAY = 86_400_000;
 const iso = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString();
@@ -185,10 +198,10 @@ export function createMockApi(opts: MockOptions = {}): Api {
   const auth = createMockAuth({ fastResend: opts.fastResend, fastExpire: opts.fastExpire, mailError: opts.mailError, now: opts.now, latency: opts.authLatency });
 
   const api: Api = {
-    mode: "mock",
+    mode: "demo",
     subscribe(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
 
-    authMode: "mock",
+    authMode: "demo",
     auth,
     admin: createMockAdmin({ auth, latency: opts.authLatency, lastOwner: opts.lastOwner, fail: opts.fail, notify: emit }),
 
@@ -247,8 +260,11 @@ export function createMockApi(opts: MockOptions = {}): Api {
           items.sort((a, b) => dir * (sort === "name" ? a.name.localeCompare(b.name, "ru") : sort === "updated" ? Date.parse(a.updatedAt) - Date.parse(b.updatedAt) : a.score - b.score));
           const total = items.length;
           const limit = f.limit ?? 50;
-          items = items.slice(0, limit);
-          return { items, total, cities: [...new Set(companies.map((c) => c.city))].sort((a, b) => a.localeCompare(b, "ru")), hasMore: total > limit };
+          // Курсор в mock — смещение; клиент, как и с сервером, передаёт его как есть.
+          const offset = f.cursor ? Math.max(0, Number(f.cursor) || 0) : 0;
+          items = items.slice(offset, offset + limit);
+          const hasMore = total > offset + limit;
+          return { items, total, cities: [...new Set(companies.map((c) => c.city))].sort((a, b) => a.localeCompare(b, "ru")), hasMore, nextCursor: hasMore ? String(offset + limit) : null };
         });
       },
       async get(id): Promise<CompanyDetail> {
@@ -259,7 +275,7 @@ export function createMockApi(opts: MockOptions = {}): Api {
           return { ...toCompany(c), facts: c.factsRec, scoreReasons: sc.reasons, scoreVersion: SCORE_RULE_VERSION, contacts: c.contacts, history: c.history, draftId: dr?.id ?? null, note: c.note };
         });
       },
-      async setStage(id, stage: CrmStage) { return gate(() => { const c = find(id); if (refusal(c) && stage !== "lost") throw new ApiError(409, "SUPPRESSION_PERMANENT", "У компании есть отказ или отписка — стадию нельзя вернуть без нового законного основания"); c.stage = stage; touch(c, "Стадия изменена", `Новая стадия: ${stage}`, "columns"); log("company.stage", "company", id, stage); }, true); },
+      async setStage(id, stage: CrmStage, expected?: CrmStage) { return gate(() => { const c = find(id); if (expected && c.stage !== expected) throw new ApiError(409, "STAGE_CONFLICT", "Стадию уже изменили в другом месте. Данные обновлены — повторите действие.", { currentStage: c.stage }); if (refusal(c) && stage !== "lost") throw new ApiError(409, "SUPPRESSION_PERMANENT", "У компании есть отказ или отписка — стадию нельзя вернуть без нового законного основания"); c.stage = stage; touch(c, "Стадия изменена", `Новая стадия: ${stage}`, "columns"); log("company.stage", "company", id, stage); }, true); },
       async setNote(id, note) { return gate(() => { const c = find(id); c.note = note.slice(0, 2000); touch(c, "Заметка обновлена", "", "file"); log("company.note", "company", id); }, true); },
       async reject(id) { return gate(() => { const c = find(id); c.state = "rejected"; touch(c, "Компания отклонена", "Исключена из работы", "shield"); log("company.reject", "company", id); }, true); },
       async exportCsv(f) {
@@ -275,16 +291,20 @@ export function createMockApi(opts: MockOptions = {}): Api {
           const table = parseCsv(text);
           if (table.length < 2) throw new ApiError(422, "EMPTY_FILE", "В файле нет строк с данными");
           if (table.length > 5001) throw new ApiError(422, "TOO_MANY_ROWS", "Максимум 5000 строк за один импорт");
-          return mapImportRows(table, companies.map((c) => ({ name: c.name, city: c.city, domain: c.domain, inn: c.inn ?? null })));
+          const { rows, missingColumns } = mapImportRows(table, companies.map((c) => ({ name: c.name, city: c.city, domain: c.domain, inn: c.inn ?? null })));
+          return { rows, missingColumns, summary: summarizeRows(rows) };
         });
       },
-      async commit(rowsIn: ImportRow[]) {
-        return gate(() => {
-          let rows = rowsIn;
-          if (rows.length > 5000) throw new ApiError(422, "TOO_MANY_ROWS", "Максимум 5000 строк за один импорт");
-          // Не доверяем клиенту: проверка и дедупликация выполняются заново.
-          const table = [["название", "город", "категория", "сайт", "инн"], ...rows.map((r) => [r.name, r.city, r.category, r.website ?? "", r.inn ?? ""])];
-          rows = mapImportRows(table, companies.map((c) => ({ name: c.name, city: c.city, domain: c.domain, inn: c.inn ?? null }))).rows;
+      async commit(text: string) {
+        return gate(async () => {
+          const { parseCsv } = await import("../normalize");
+          // Как и сервер, разбираем текст и сверяем с базой заново: клиентским флагам не доверяем.
+          const table = parseCsv(text);
+          if (table.length < 2) throw new ApiError(422, "EMPTY_FILE", "В файле нет строк с данными");
+          if (table.length > 5001) throw new ApiError(422, "TOO_MANY_ROWS", "Максимум 5000 строк за один импорт");
+          const mapped = mapImportRows(table, companies.map((c) => ({ name: c.name, city: c.city, domain: c.domain, inn: c.inn ?? null })));
+          if (mapped.missingColumns.length) throw new ApiError(422, "MISSING_COLUMNS", `В файле нет обязательных колонок: ${mapped.missingColumns.join(", ")}.`, { missingColumns: mapped.missingColumns });
+          const rows = mapped.rows;
           let added = 0, skipped = 0;
           for (const r of rows) {
             if (r.issues.length || (r.duplicate && r.duplicate.kind !== "candidate")) { skipped++; continue; }
@@ -303,7 +323,8 @@ export function createMockApi(opts: MockOptions = {}): Api {
           }
           jobs.unshift({ id: uid("j"), label: `Импорт CSV (${rows.length} строк)`, type: "import", state: "succeeded", retries: 0, lastError: null, createdAt: iso(), updatedAt: iso() });
           log("import.commit", "import", "csv", `добавлено ${added}, пропущено ${skipped}`);
-          return { added, skipped };
+          const summary = summarizeRows(rows);
+          return { jobId: null, rowsTotal: rows.length, added, skipped, candidates: summary.candidates, summary };
         }, true);
       },
     },

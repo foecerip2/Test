@@ -26,6 +26,8 @@ export interface Company {
   sourceLabel: string;
   updatedAt: string;
   demo: boolean;
+  /** Только с сервера: возможный дубликат (проверить вручную). */
+  duplicateCandidate?: boolean;
 }
 
 export interface Fact {
@@ -61,7 +63,7 @@ export interface Contact {
   platformAllowed: boolean;
 }
 
-export interface ActivityEvent { id: string; icon: string; title: string; text: string; at: string; companyId?: string }
+export interface ActivityEvent { id: string; icon: string; title: string; text: string; at: string; companyId?: string; companyName?: string | null }
 
 export interface CompanyDetail extends Company {
   facts: Fact[];
@@ -81,8 +83,10 @@ export interface CompanyFilter {
   sort?: "score" | "name" | "updated";
   dir?: "asc" | "desc";
   limit?: number;
+  /** Непрозрачный курсор следующей страницы (nextCursor предыдущего ответа). */
+  cursor?: string;
 }
-export interface CompanyPage { items: Company[]; total: number; cities: string[]; hasMore: boolean }
+export interface CompanyPage { items: Company[]; total: number; cities: string[]; hasMore: boolean; nextCursor: string | null }
 
 export type DraftStatus = "generated" | "editing" | "pending_review" | "approved" | "rejected";
 export interface Draft {
@@ -169,19 +173,28 @@ export interface Summary {
   companiesTotal: number;
   companiesWeek: number;
   suitable: number;
-  awaitingApproval: number;
-  interested: number;
-  unread: number;
-  blockedSends: number;
-  openTasks: number;
-  jobsActive: number;
-  funnel: { label: string; count: number }[];
-  weekly: { label: string; found: number; passed: number }[];
-  quality: { duplicatesMarked: number; refusals: number; withEvidencePct: number; suppressed: number };
+  /** Показатели ниже сервер пока не отдаёт (нет черновиков, диалогов, задач): UI их скрывает, а не рисует нули. */
+  awaitingApproval?: number;
+  interested?: number;
+  unread?: number;
+  blockedSends?: number;
+  openTasks?: number;
+  jobsActive?: number;
+  funnel?: { label: string; count: number }[];
+  weekly?: { label: string; found: number; passed: number }[];
+  quality?: { duplicatesMarked: number; refusals: number; withEvidencePct: number; suppressed: number };
+  /** Порог оценки с сервера (live). */
+  scoreThreshold?: number;
+  /** Количество компаний по стадиям CRM (live, из /dashboard). */
+  byStage?: Partial<Record<CrmStage, number>>;
   attention: { id: string; title: string; text: string; href: string; tone: Tone }[];
   recent: ActivityEvent[];
   topCompanies: Company[];
 }
+
+export interface ImportSummary { total: number; importable: number; withIssues: number; exact: number; inFile: number; candidates: number }
+export interface ImportPreview { rows: ImportRow[]; missingColumns: string[]; summary: ImportSummary }
+export interface ImportResult { jobId: string | null; rowsTotal: number; added: number; skipped: number; candidates: number; summary: ImportSummary }
 
 export interface Me { email: string; initials: string; name: string }
 
@@ -193,7 +206,7 @@ export interface AdminUser { id: string; email: string; role: UserRole; status: 
 export interface OtpChallenge { challengeId: string; expiresIn: number; resendIn: number }
 export interface OtpVerified { user: AuthUser; isNew: boolean }
 
-export interface ApiErrorDetails { attemptsLeft?: number; retryAfter?: number; requestId?: string }
+export interface ApiErrorDetails { attemptsLeft?: number; retryAfter?: number; requestId?: string; currentStage?: CrmStage; missingColumns?: string[] }
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details: ApiErrorDetails = {}) {
@@ -202,10 +215,11 @@ export class ApiError extends Error {
 }
 
 export interface Api {
-  readonly mode: "mock" | "live";
+  /** Режим данных: "live" — рабочий сервер (NEXT_PUBLIC_DATA_MODE / AUTH_MODE), "demo" — демонстрационные данные. */
+  readonly mode: "demo" | "live";
   subscribe(cb: () => void): () => void;
-  /** "live" — сессия на сервере (NEXT_PUBLIC_AUTH_MODE=live); "mock" — демо-вход с кодом 123456. */
-  readonly authMode: "mock" | "live";
+  /** "live" — сессия на сервере (NEXT_PUBLIC_AUTH_MODE=live); "demo" — демо-вход с кодом 123456. */
+  readonly authMode: "demo" | "live";
   auth: {
     requestCode(email: string): Promise<OtpChallenge>;
     verifyCode(challengeId: string, code: string): Promise<OtpVerified>;
@@ -223,14 +237,17 @@ export interface Api {
   companies: {
     list(f: CompanyFilter): Promise<CompanyPage>;
     get(id: string): Promise<CompanyDetail>;
-    setStage(id: string, stage: CrmStage): Promise<void>;
+    /** expected — оптимистичная проверка: если стадия на сервере другая, 409 STAGE_CONFLICT. */
+    setStage(id: string, stage: CrmStage, expected?: CrmStage): Promise<void>;
     setNote(id: string, note: string): Promise<void>;
     reject(id: string): Promise<void>;
     exportCsv(f: CompanyFilter): Promise<string>;
   };
   imports: {
-    preview(text: string): Promise<{ rows: ImportRow[]; missingColumns: string[] }>;
-    commit(rows: ImportRow[]): Promise<{ added: number; skipped: number }>;
+    /** dry-run: ничего не записывает. Принимает текст CSV (клиент декодирует UTF-8/cp1251). */
+    preview(text: string): Promise<ImportPreview>;
+    /** Сервер заново разбирает тот же текст и сверяет с базой: клиентским флагам не доверяет. */
+    commit(text: string): Promise<ImportResult>;
   };
   campaigns: {
     list(): Promise<Campaign[]>;
