@@ -19,7 +19,16 @@ from app import models
 from app.db import Base
 
 API_DIR = Path(__file__).resolve().parent.parent
-NEW_TABLES = {"companies", "company_facts", "lead_scores", "import_jobs", "activity_events"}
+NEW_TABLES = {
+    "companies",
+    "company_facts",
+    "lead_scores",
+    "import_jobs",
+    "activity_events",
+    "jobs",
+    "campaigns",
+}
+COMPANY_TABLES = NEW_TABLES - {"jobs", "campaigns"}
 OLD_TABLES = {"users", "otp_challenges", "sessions", "audit_logs", "rate_limits"}
 
 
@@ -55,7 +64,7 @@ def _version(url: str) -> str | None:
 def test_upgrade_creates_all_tables(db_url: str) -> None:
     command.upgrade(_config(db_url), "head")
     assert _tables(db_url) == OLD_TABLES | NEW_TABLES
-    assert _version(db_url) == "0002"
+    assert _version(db_url) == "0003"
 
 
 def test_downgrade_to_0001_removes_only_new_tables(db_url: str) -> None:
