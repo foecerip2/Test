@@ -1,10 +1,10 @@
 import { Panel } from "../ui";
 import m from "./analytics.module.css";
 
-export function Funnel({ steps, demo }: { steps: { label: string; count: number }[]; demo: boolean }) {
+export function Funnel({ steps, demo, title = "Воронка", subtitle }: { steps: { label: string; count: number }[]; demo: boolean; title?: string; subtitle?: string }) {
   const max = Math.max(1, ...steps.map((s) => s.count));
   return (
-    <Panel title="Воронка" subtitle={demo ? "Демо: считается по демонстрационным данным" : "Количество компаний на каждом шаге"}>
+    <Panel title={title} subtitle={subtitle ?? (demo && process.env.NEXT_PUBLIC_DATA_MODE !== "live" ? "Демо: считается по демонстрационным данным" : "Количество компаний на каждом шаге")}>
       <ul className={m.funnel}>
         {steps.map((s) => (
           <li key={s.label} className={m.frow}>

@@ -8,15 +8,17 @@ import { pendingText } from "@/lib/users";
 
 export default function OverviewPage() {
   useDocumentTitle("Обзор");
+  const live = process.env.NEXT_PUBLIC_DATA_MODE === "live";
   const q = useQuery((a) => a.summary());
-  const st = useQuery((a) => a.settings.get());
-  const threshold = st.data?.scoreThreshold ?? 75;
+  // Порог оценки: в рабочем режиме — с сервера (из сводки), в демо — из настроек.
+  const st = useQuery(async (a) => (a.mode === "live" ? null : a.settings.get()));
+  const threshold = q.data?.scoreThreshold ?? st.data?.scoreThreshold ?? 75;
   const me = useQuery((a) => a.auth.me());
   const pendingUsers = usePendingUsers(me.data?.role === "owner" && me.data.status === "active");
 
   const header = (
     <PageHeader eyebrow={fmtDay(new Date().toISOString()).toUpperCase()} title="Рабочее пространство" subtitle="Ваша система поиска, квалификации и сопровождения компаний."
-      actions={<Link href="/discovery" className="btn btn-primary"><Icon name="search" /> Новый поиск</Link>} />
+      actions={<Link href="/discovery" className="btn btn-primary"><Icon name={live ? "upload" : "search"} /> {live ? "Импорт CSV" : "Новый поиск"}</Link>} />
   );
 
   if (q.loading && !q.data) return <>{header}<LoadingSkeleton rows={6} /></>;
@@ -27,12 +29,16 @@ export default function OverviewPage() {
     return (
       <>{header}
         <Panel>
-          <EmptyState level={2} icon="building" title="В базе пока нет компаний" text="Загрузите CSV со списком компаний или создайте поисковую кампанию. Метрики и приоритеты появятся после первых данных."
+          <EmptyState level={2} icon="building"
+            title={live ? "Загрузите свой CSV" : "В базе пока нет компаний"}
+            text={live ? "В базе пока нет компаний. Загрузите CSV со списком — метрики и приоритеты появятся после первых данных." : "Загрузите CSV со списком компаний или создайте поисковую кампанию. Метрики и приоритеты появятся после первых данных."}
             action={<Link href="/discovery" className="btn btn-primary"><Icon name="download" /> Импортировать CSV</Link>} />
         </Panel>
       </>
     );
   }
+
+  const inWork = s.byStage ? (s.byStage.contacted ?? 0) + (s.byStage.replied ?? 0) + (s.byStage.interested ?? 0) + (s.byStage.pilot ?? 0) : null;
 
   return (
     <>
@@ -49,18 +55,19 @@ export default function OverviewPage() {
       <div className="metric-grid">
         <MetricCard label="Компании в базе" value={s.companiesTotal} foot={`+${s.companiesWeek} за 7 дней`} icon="building" />
         <MetricCard label="Подходят под продукт" value={s.suitable} foot={`Оценка от ${threshold} баллов`} icon="radar" />
-        <MetricCard label="Ожидают решения" value={s.awaitingApproval} foot="Черновики на согласовании" icon="clock" />
-        <MetricCard label="Заинтересованные" value={s.interested} foot="По классификации ответов" icon="chat" />
+        {s.awaitingApproval !== undefined && <MetricCard label="Ожидают решения" value={s.awaitingApproval} foot="Черновики на согласовании" icon="clock" />}
+        {s.interested !== undefined && <MetricCard label="Заинтересованные" value={s.interested} foot="По классификации ответов" icon="chat" />}
+        {live && inWork !== null && <MetricCard label="В работе" value={inWork} foot="Стадии от «Контакт» до «Пилот»" icon="columns" />}
       </div>
       <div className="grid-main">
         <Panel title="Приоритетные компании" subtitle="Лучшая оценка среди активных" action={<Link href="/companies" className="link-btn">Вся база <Icon name="arrow" /></Link>}>
           {s.topCompanies.length ? <CompanyTable items={s.topCompanies} caption="Приоритетные компании" threshold={threshold} /> : <EmptyState title="Нет активных компаний" />}
         </Panel>
-        <Panel title="Последние события" subtitle="Журнал активности" action={<Link href="/inbox" className="link-btn">Диалоги <Icon name="arrow" /></Link>}>
-          <ActivityFeed items={s.recent.map((e) => ({ id: e.id, icon: e.icon, title: e.title, text: e.text || "—", time: fmtRel(e.at), href: e.companyId ? `/companies/${e.companyId}` : undefined }))} />
+        <Panel title="Последние события" subtitle="Журнал активности" action={live ? undefined : <Link href="/inbox" className="link-btn">Диалоги <Icon name="arrow" /></Link>}>
+          <ActivityFeed items={s.recent.map((e) => ({ id: e.id, icon: e.icon, title: live && e.companyName ? `${e.companyName}: ${e.title}` : e.title, text: e.text || "—", time: fmtRel(e.at), href: e.companyId ? `/companies/${e.companyId}` : undefined }))} />
         </Panel>
       </div>
-      {s.awaitingApproval > 0 && (
+      {s.awaitingApproval !== undefined && s.awaitingApproval > 0 && (
         <div className="callout">
           <div>
             <h2>{s.awaitingApproval} {s.awaitingApproval === 1 ? "черновик ждёт" : "черновиков ждут"} вашего решения</h2>

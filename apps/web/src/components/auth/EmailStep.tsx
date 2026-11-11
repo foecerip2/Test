@@ -27,7 +27,7 @@ export function EmailStep({ value, onChange, onSubmit, busy, error, demo, inputR
       <button className={`btn btn-primary ${s.wide}`} type="submit" disabled={busy || !value.trim()}>
         {busy ? <><span className={`${s.spinner} ${s.onAccent}`} aria-hidden="true" />Отправляем код…</> : "Получить код"}
       </button>
-      {demo && <div className={s.demo}>Демо: код подтверждения <b>123456</b></div>}
+      {demo && process.env.NEXT_PUBLIC_DATA_MODE !== "live" && <div className={s.demo}>Демо: код подтверждения <b>123456</b></div>}
     </form>
   );
 }

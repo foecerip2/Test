@@ -9,7 +9,7 @@ import { ConsentPanel } from "@/components/companies/ConsentPanel";
 import { EvidenceList } from "@/components/companies/EvidenceList";
 import { ScoreBreakdown } from "@/components/companies/ScoreBreakdown";
 import { TaskDialog } from "@/components/tasks/TaskDialog";
-import { ActivityFeed, DemoTag, ErrorState, Field, LoadingSkeleton, ScoreBadge, StatusTag } from "@/components/ui";
+import { ActivityFeed, ErrorState, Field, LoadingSkeleton, ScoreBadge, StatusTag } from "@/components/ui";
 import { ApiError, getApi, type CompanyDetail, type CrmStage } from "@/lib/api";
 import { fmtRel, useDocumentTitle, useQuery } from "@/lib/hooks";
 import s from "./company.module.css";
@@ -25,7 +25,7 @@ function NoteEditor({ id, initial }: { id: string; initial: string }) {
   const [busy, setBusy] = useState(false);
   async function save() {
     setBusy(true);
-    try { await getApi().companies.setNote(id, v); toast("Заметка сохранена"); } catch { toast("Не удалось сохранить заметку", "error"); }
+    try { await getApi().companies.setNote(id, v); toast("Заметка сохранена"); } catch (x) { toast(x instanceof ApiError ? x.message : "Не удалось сохранить заметку", "error"); }
     setBusy(false);
   }
   return (
@@ -55,13 +55,17 @@ function Body({ c }: { c: CompanyDetail }) {
   }
   async function reject() {
     setBusy(true);
-    try { await getApi().companies.reject(c.id); toast("Компания отклонена"); } catch { toast("Не удалось отклонить", "error"); }
+    try { await getApi().companies.reject(c.id); toast("Компания отклонена"); } catch (x) { toast(x instanceof ApiError ? x.message : "Не удалось отклонить", "error"); }
     setBusy(false); setRej(false);
   }
   async function stage(v: CrmStage) {
-    try { await getApi().companies.setStage(c.id, v); toast("Стадия обновлена"); } catch { toast("Не удалось изменить стадию", "error"); }
+    // expected_stage: если стадию успели изменить в другом месте, сервер ответит 409 STAGE_CONFLICT, а карточка обновится.
+    try { await getApi().companies.setStage(c.id, v, c.stage); toast("Стадия обновлена"); }
+    catch (x) { toast(x instanceof ApiError ? x.message : "Не удалось изменить стадию", "error"); }
   }
   const closed = c.display.key === "rejected" || c.display.key === "refused";
+  const live = process.env.NEXT_PUBLIC_DATA_MODE === "live";
+  const SOON_HINT = "Появится в следующем обновлении: пока не подключено к серверу";
 
   return (
     <>
@@ -71,14 +75,14 @@ function Body({ c }: { c: CompanyDetail }) {
           <h1>{c.name}</h1>
           <p className="subtitle">{c.city} · {c.category}{c.website && <> · <a href={c.website} target="_blank" rel="noopener noreferrer nofollow">{c.domain}<Icon name="external" /><span className="sr-only"> (откроется в новой вкладке)</span></a></>}</p>
           <div className="row" style={{ marginTop: 10 }}>
-            <ScoreBadge score={c.score} /><StatusTag status={c.display} />{c.demo && <DemoTag />}
+            <ScoreBadge score={c.score} /><StatusTag status={c.display} />{process.env.NEXT_PUBLIC_DATA_MODE !== "live" && c.demo && <span className="tag demo">Демо</span>}
           </div>
         </div>
         <div className="head-buttons">
           {c.draftId
             ? <Link href={`/approvals?draft=${c.draftId}`} className="btn btn-primary"><Icon name="file" /> Открыть черновик</Link>
-            : <button className="btn btn-primary" onClick={createDraft} disabled={busy || closed} title={closed ? "Компания отклонена или отказалась" : undefined}><Icon name="file" /> Создать черновик</button>}
-          <button className="btn" onClick={() => setTask(true)}><Icon name="clock" /> Создать задачу</button>
+            : <button className="btn btn-primary" onClick={createDraft} disabled={live || busy || closed} title={live ? SOON_HINT : closed ? "Компания отклонена или отказалась" : undefined}><Icon name="file" /> Создать черновик</button>}
+          <button className="btn" onClick={() => setTask(true)} disabled={live} title={live ? SOON_HINT : undefined}><Icon name="clock" /> Создать задачу</button>
           <button className="btn btn-danger" onClick={() => setRej(true)} disabled={c.state === "rejected"} title={c.state === "rejected" ? "Уже отклонена" : undefined}>Отклонить</button>
         </div>
       </div>
@@ -87,7 +91,7 @@ function Body({ c }: { c: CompanyDetail }) {
           <section className="panel"><div className="panel-heading"><div><h2>Основания для персонализации</h2><p>Факты с источником отделены от гипотез</p></div></div>
             <div className="panel-body"><EvidenceList facts={c.facts} /></div></section>
           <section className="panel"><div className="panel-heading"><div><h2>Контакты и согласие адресата</h2><p>Согласие проверяется отдельно от одобрения текста</p></div></div>
-            <div className="panel-body"><ConsentPanel contacts={c.contacts} /></div></section>
+            <div className="panel-body">{live ? <p className="muted" data-testid="contacts-soon">Контакты и согласия адресатов появятся в следующем обновлении: пока они не подключены к серверу, поэтому здесь нет данных.</p> : <ConsentPanel contacts={c.contacts} />}</div></section>
           <section className="panel"><div className="panel-heading"><div><h2>История</h2><p>События по компании</p></div></div>
             <ActivityFeed items={c.history.map((e) => ({ id: e.id, icon: e.icon, title: e.title, text: e.text || "—", time: fmtRel(e.at) }))} /></section>
         </div>

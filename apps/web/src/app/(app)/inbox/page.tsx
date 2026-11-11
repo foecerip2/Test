@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ConversationList } from "@/components/inbox/ConversationList";
 import { ConversationThread } from "@/components/inbox/ConversationThread";
 import { Icon } from "@/components/Icon";
+import { SoonPage } from "@/components/SoonPage";
 import { ConfirmDialog } from "@/components/Modal";
 import { TaskDialog } from "@/components/tasks/TaskDialog";
 import { useToast } from "@/components/Toast";
@@ -12,6 +13,14 @@ import { useDocumentTitle, useQuery } from "@/lib/hooks";
 import s from "./inbox.module.css";
 
 export default function InboxPage() {
+  if (process.env.NEXT_PUBLIC_DATA_MODE === "live") {
+    return <SoonPage eyebrow="ДИАЛОГИ / CRM" title="Центр сообщений" subtitle="Здесь будут ответы из подключённых каналов, классификация и следующий шаг." icon="chat"
+      text="Каналы и диалоги ещё не подключены к серверу, поэтому сообщений здесь пока нет." />;
+  }
+  return <InboxView />;
+}
+
+function InboxView() {
   useDocumentTitle("Диалоги");
   const toast = useToast();
   const convs = useQuery((a) => a.conversations.list());
