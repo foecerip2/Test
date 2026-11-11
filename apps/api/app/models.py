@@ -206,6 +206,9 @@ class CompanyFact(Base):
     evidence_excerpt: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     observed_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=_now)
     confidence: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.5)
+    # Источник и ключ факта: при повторной проверке факты источника заменяются целиком.
+    source: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
+    fact_key: Mapped[str | None] = mapped_column(sa.String(48), nullable=True)
 
 
 class LeadScore(Base):
@@ -274,3 +277,94 @@ class ActivityEvent(Base):
 @sa.event.listens_for(ActivityEvent, "before_delete")
 def _activity_append_only(*_: object) -> None:
     raise RuntimeError("activity_events — append-only: изменение и удаление запрещены")
+
+
+JOB_STATES = ("queued", "running", "succeeded", "failed", "cancelled")
+ACTIVE_JOB_STATES = ("queued", "running")
+CAMPAIGN_STATUSES = ("running", "paused", "done")
+
+
+class Job(Base):
+    """Задача очереди в PostgreSQL (ADR-017): без Celery/Redis, воркер берёт строки SKIP LOCKED."""
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        sa.CheckConstraint(_in("state", JOB_STATES), name="ck_jobs_state"),
+        sa.CheckConstraint("attempts >= 0 AND max_attempts >= 1", name="ck_jobs_attempts"),
+        sa.Index("ix_jobs_state_run_after", "state", "run_after"),
+        sa.Index("ix_jobs_created_at", "created_at"),
+        sa.Index("ix_jobs_campaign_created", "campaign_id", "created_at"),
+        # Не более одной активной задачи на ключ идемпотентности (partial unique index).
+        sa.Index(
+            "uq_jobs_active_dedupe",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=sa.text("dedupe_key IS NOT NULL AND state IN ('queued', 'running')"),
+            sqlite_where=sa.text("dedupe_key IS NOT NULL AND state IN ('queued', 'running')"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    type: Mapped[str] = mapped_column(sa.String(48), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    state: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, default="queued", server_default="queued"
+    )
+    attempts: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, default=3, server_default="3"
+    )
+    run_after: Mapped[datetime] = mapped_column(
+        UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
+    )
+    locked_by: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    dedupe_key: Mapped[str | None] = mapped_column(sa.String(120), nullable=True)
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        sa.Uuid, sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
+    )
+
+
+class Campaign(Base):
+    """Кампания: правила отбора компаний для автоматической проверки сайтов."""
+
+    __tablename__ = "campaigns"
+    __table_args__ = (
+        sa.CheckConstraint(_in("status", CAMPAIGN_STATUSES), name="ck_campaigns_status"),
+        sa.CheckConstraint(
+            "per_day_limit >= 1 AND per_day_limit <= 1000", name="ck_campaigns_limit"
+        ),
+        sa.Index("ix_campaigns_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(sa.String(120), nullable=False)
+    regions: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list)
+    categories: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list)
+    filter: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    per_day_limit: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=50)
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, default="running", server_default="running"
+    )
+    progress: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        sa.Uuid, sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
+    )

@@ -16,7 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import Settings
 from app.db import make_engine, make_session_factory
 from app.mail import Mailer, make_mailer
-from app.routers import admin, auth, companies, dashboard, health, imports
+from app.routers import admin, auth, campaigns, companies, dashboard, health, imports, jobs, sources
 from app.security import AppError
 
 log = logging.getLogger("leadhunter.api")
@@ -131,6 +131,9 @@ def create_app(settings: Settings | None = None, mailer: Mailer | None = None) -
     app.include_router(companies.router)
     app.include_router(imports.router)
     app.include_router(dashboard.router)
+    app.include_router(jobs.router)
+    app.include_router(campaigns.router)
+    app.include_router(sources.router)
     return app
 
 

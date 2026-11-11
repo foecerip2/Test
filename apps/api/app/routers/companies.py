@@ -12,9 +12,13 @@ from sqlalchemy.orm import Session
 from app.company_schemas import CompanyDetailOut, CompanyPageOut, CompanyPatchIn
 from app.db import get_db
 from app.deps import require_active_user, require_active_user_csrf
+from app.job_schemas import JobEnqueuedOut
 from app.models import User
+from app.security import AppError
 from app.services import companies as svc
+from app.services import jobs
 from app.services.companies import CompanyFilter, Direction, SortKey
+from app.services.job_handlers import ENRICH_COMPANY
 
 router = APIRouter(prefix="/api/v1/companies", tags=["companies"])
 
@@ -128,6 +132,38 @@ def patch_company(
     db.commit()
     db.refresh(company)
     return svc.detail_out(db, company)
+
+
+@router.post("/{company_id}/enrich", status_code=202, response_model=JobEnqueuedOut)
+def enrich_company(
+    company_id: uuid.UUID,
+    user: User = Depends(require_active_user_csrf),
+    db: Session = Depends(get_db),
+) -> JobEnqueuedOut:
+    """Ставит в очередь проверку сайта компании (факты с доказательствами и пересчёт оценки)."""
+    company = svc.get_company(db, company_id)
+    if not company.website and not company.canonical_domain:
+        raise AppError(422, "NO_WEBSITE", "У компании не указан сайт — проверять нечего.")
+    try:
+        job = jobs.enqueue(
+            db,
+            ENRICH_COMPANY,
+            {"company_id": str(company.id)},
+            created_by=user.id,
+            dedupe_key=jobs.dedupe_key_for(ENRICH_COMPANY, company.id),
+        )
+    except jobs.DuplicateJobError as exc:
+        raise AppError(
+            409,
+            "JOB_ALREADY_ACTIVE",
+            "Проверка этой компании уже в очереди или выполняется.",
+            extra={"job_id": str(exc.existing_id)},
+        ) from None
+    svc.add_audit(
+        db, user.id, "company.enrich", "company", str(company.id), {"job_id": str(job.id)}
+    )
+    db.commit()
+    return JobEnqueuedOut(job_id=job.id)
 
 
 @router.post("/{company_id}/reject", response_model=CompanyDetailOut)

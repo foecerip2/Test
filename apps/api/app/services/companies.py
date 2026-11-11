@@ -181,6 +181,7 @@ _EVENT_VIEW: dict[str, tuple[str, str]] = {
     "company.note_updated": ("file", "Заметка обновлена"),
     "company.rejected": ("shield", "Компания отклонена"),
     "company.score_recalculated": ("check", "Оценка пересчитана"),
+    "company.site_checked": ("globe", "Сайт проверен"),
 }
 
 
@@ -195,6 +196,8 @@ def _event_text(event_type: str, p: dict[str, Any]) -> str:
         return "Исключена из работы"
     if event_type == "company.score_recalculated":
         return f"{p.get('from', '?')} → {p.get('to', '?')}"
+    if event_type == "company.site_checked":
+        return f"Проверено страниц: {p.get('pages_checked', 0)}, фактов: {p.get('facts', 0)}"
     return ""
 
 

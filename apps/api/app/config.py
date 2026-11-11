@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     # Порог оценки «подходит для работы» (ТЗ §9, решение №14 плана): по умолчанию 75.
     score_threshold: int = Field(default=75, ge=0, le=100)
 
+    # Срок хранения данных источника «CSV» (дни); показывается в /sources. Автоочистки пока нет.
+    data_retention_days: int = Field(default=365, ge=1, le=3650)
+
+    # Очередь задач и воркер (ADR-017): PostgreSQL, без Celery/Redis.
+    worker_concurrency: int = Field(default=1, ge=1, le=2)
+    worker_poll_seconds: float = Field(default=2.0, ge=0.05, le=60)
+    job_lock_timeout_seconds: int = Field(default=300, ge=10)
+    worker_heartbeat_file: str = "/tmp/lh-worker.heartbeat"  # noqa: S108
+
+    # Только для тестов на localhost: отключает проверку адресов при загрузке сайтов (SSRF).
+    allow_private_fetch_for_tests: bool = False
+
     @model_validator(mode="after")
     def _validate(self) -> Self:
         self.owner_email = self.owner_email.strip().lower()
@@ -60,6 +72,8 @@ class Settings(BaseSettings):
                 raise ValueError("MAIL_BACKEND=console запрещён в prod, используйте http или smtp")
             if self.database_url.startswith("sqlite"):
                 raise ValueError("В prod нужен PostgreSQL в DATABASE_URL")
+        if self.allow_private_fetch_for_tests and self.env != "dev":
+            raise ValueError("ALLOW_PRIVATE_FETCH_FOR_TESTS допустим только при ENV=dev")
         if len(self.secret_key) < 16:
             raise ValueError("SECRET_KEY слишком короткий")
         if self.mail_backend == "smtp" and not self.smtp_host:
