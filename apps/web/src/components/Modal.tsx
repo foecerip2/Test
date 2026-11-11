@@ -4,8 +4,17 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 /** Модальное окно: aria-modal, фокус внутри, Esc, возврат фокуса. */
-export function Modal({ title, onClose, children, labelId, describedBy }: { title: string; onClose: () => void; children: ReactNode; labelId?: string; describedBy?: string }) {
+export function Modal({ title, onClose, children, labelId, describedBy, variant = "dialog", hideTitle, dialogClass, titleClass, dismissOnBackdrop = true, phase }: {
+  title: string; onClose: () => void; children: ReactNode; labelId?: string; describedBy?: string;
+  /** "sheet" — на телефоне нижний лист (bottom sheet), на широком экране обычная карточка. */
+  variant?: "dialog" | "sheet";
+  hideTitle?: boolean; dialogClass?: string; titleClass?: string;
+  dismissOnBackdrop?: boolean;
+  /** Произвольное состояние для стилей: data-phase на окне. */
+  phase?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const autoId = useId();
   const titleId = labelId ?? `modal-title-${autoId}`;
   // onClose часто передаётся новой стрелочной функцией: держим его в ref, чтобы эффект
@@ -37,10 +46,25 @@ export function Modal({ title, onClose, children, labelId, describedBy }: { titl
       else document.getElementById("content")?.focus();
     };
   }, []);
+  // Экранная клавиатура: лист поднимается над ней (visualViewport), чтобы поля и кнопки не перекрывались.
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const el = backdropRef.current;
+    if (variant !== "sheet" || !vv || !el) return;
+    const update = () => {
+      const inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      el.style.setProperty("--kb", `${inset}px`);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => { vv.removeEventListener("resize", update); vv.removeEventListener("scroll", update); };
+  }, [variant]);
+  const vAttr = variant === "sheet" ? "sheet" : undefined;
   return (
-    <div className="dialog-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={describedBy} ref={ref} tabIndex={-1}>
-        <h2 id={titleId} tabIndex={-1} style={{ outline: "none" }}>{title}</h2>
+    <div className="dialog-backdrop" data-variant={vAttr} data-phase={phase} ref={backdropRef} onMouseDown={(e) => { if (dismissOnBackdrop && e.target === e.currentTarget) onClose(); }}>
+      <div className={`dialog ${dialogClass ?? ""}`} data-variant={vAttr} data-phase={phase} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={describedBy} ref={ref} tabIndex={-1}>
+        <h2 id={titleId} tabIndex={-1} className={`${hideTitle ? "sr-only" : ""} ${titleClass ?? ""}`} style={{ outline: "none" }}>{title}</h2>
         {children}
       </div>
     </div>

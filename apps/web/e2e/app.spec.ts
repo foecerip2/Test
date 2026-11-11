@@ -1,25 +1,21 @@
 import { expect, test, type Page } from "@playwright/test";
 
+/** Вход по email и демо-коду 123456 (подробные сценарии — в auth.spec.ts). */
 async function login(page: Page, path = "/login") {
   await page.goto(path);
   await page.waitForLoadState("networkidle");
   await page.getByLabel("Email").fill("owner@example.com");
-  await page.getByLabel("Пароль").fill("password123");
-  await page.getByRole("button", { name: "Войти" }).click();
+  await page.getByRole("button", { name: "Получить код" }).click();
+  await page.getByLabel("Цифра 1 из 6").waitFor();
+  await page.keyboard.type("123456");
   await page.waitForURL("**/overview");
 }
 
 test.describe("вход", () => {
-  test("короткий пароль отклоняется, правильный вход ведёт в обзор", async ({ page }) => {
-    await page.goto("/login");
-    await page.waitForLoadState("networkidle");
-    await page.getByLabel("Email").fill("owner@example.com");
-    await page.getByLabel("Пароль").fill("short");
-    await page.getByRole("button", { name: "Войти" }).click();
-    await expect(page.locator(".field-error")).toContainText("Неверный email или пароль");
-    await page.getByLabel("Пароль").fill("password123");
-    await page.getByRole("button", { name: "Войти" }).click();
+  test("вход по email и коду ведёт в обзор", async ({ page }) => {
+    await login(page);
     await expect(page).toHaveURL(/\/overview$/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
   test("без сессии защищённая страница перенаправляет на /login", async ({ page }) => {
@@ -116,22 +112,12 @@ test.describe("диалоги", () => {
 
 test.describe("состояния", () => {
   test("пустая база показывает EmptyState без выдуманных метрик", async ({ page }) => {
-    await page.goto("/login?mock=empty");
-    await page.waitForLoadState("networkidle");
-    await page.getByLabel("Email").fill("owner@example.com");
-    await page.getByLabel("Пароль").fill("password123");
-    await page.getByRole("button", { name: "Войти" }).click();
-    await page.waitForURL("**/overview");
+    await login(page, "/login?mock=empty");
     await expect(page.getByText("Импортировать CSV").first()).toBeVisible();
   });
 
   test("ошибка API показывает ErrorState с повтором", async ({ page }) => {
-    await page.goto("/login?mock=error");
-    await page.waitForLoadState("networkidle");
-    await page.getByLabel("Email").fill("owner@example.com");
-    await page.getByLabel("Пароль").fill("password123");
-    await page.getByRole("button", { name: "Войти" }).click();
-    await page.waitForURL("**/overview");
+    await login(page, "/login?mock=error");
     await expect(page.getByRole("alert").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Повторить" }).first()).toBeVisible();
   });
