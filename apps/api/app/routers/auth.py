@@ -91,7 +91,12 @@ def enforce_send_limits(db: Session, settings: Settings, email: str, ip: str) ->
     if len(email_events) >= EMAIL_PER_HOUR:
         raise _rate_limited((email_events[0] + HOUR - n).total_seconds())
 
-    db.execute(delete(RateLimitEvent).where(RateLimitEvent.created_at < n - 2 * HOUR))
+    db.execute(
+        delete(RateLimitEvent).where(
+            RateLimitEvent.scope.in_(("otp_email", "otp_ip")),  # чужие окна (пилот) не трогаем
+            RateLimitEvent.created_at < n - 2 * HOUR,
+        )
+    )
     ids: list[uuid.UUID] = []
     for scope, key in (("otp_email", ek), ("otp_ip", ik)):
         ev = RateLimitEvent(id=uuid.uuid4(), scope=scope, key=key, created_at=n)

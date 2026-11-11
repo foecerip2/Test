@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal, Self
 from urllib.parse import urlsplit
 
@@ -9,6 +10,7 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_SECRET = "dev-insecure-secret-key-do-not-use-in-prod-0123456789"
+_HOST_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 
 
 class Settings(BaseSettings):
@@ -54,6 +56,16 @@ class Settings(BaseSettings):
     job_lock_timeout_seconds: int = Field(default=300, ge=10)
     worker_heartbeat_file: str = "/tmp/lh-worker.heartbeat"  # noqa: S108
 
+    # Публичная форма «Хочу пилот» AutoFlow: CORS и проверка Origin только для этих источников.
+    # AUTOFLOW_ORIGINS — список через запятую (https://host); AUTOFLOW_DOMAIN → https://домен.
+    # По умолчанию пусто: приём заявок закрыт (любой Origin → 403).
+    autoflow_origins: str = ""
+    autoflow_domain: str = ""
+    pilot_consent_version: str = Field(default="2026-11-v1", min_length=1, max_length=32)
+    pilot_ip_per_hour: int = Field(default=5, ge=1)
+    pilot_ip_per_day: int = Field(default=20, ge=1)
+    pilot_global_per_day: int = Field(default=300, ge=1)
+
     # Только для тестов на localhost: отключает проверку адресов при загрузке сайтов (SSRF).
     allow_private_fetch_for_tests: bool = False
 
@@ -65,6 +77,10 @@ class Settings(BaseSettings):
         elif self.database_url.startswith("postgresql://"):
             self.database_url = "postgresql+psycopg://" + self.database_url[len("postgresql://") :]
         self.public_origin = self.public_origin.strip().rstrip("/")
+        self.autoflow_domain = self.autoflow_domain.strip().lower()
+        if self.autoflow_domain and not _HOST_RE.match(self.autoflow_domain):
+            raise ValueError("AUTOFLOW_DOMAIN должен быть именем хоста без схемы и пути")
+        self._parse_autoflow_origins()  # проверка формата
         if self.env == "prod":
             if len(self.secret_key) < 32 or self.secret_key == DEV_SECRET:
                 raise ValueError("SECRET_KEY обязателен в prod и должен быть не короче 32 символов")
@@ -92,6 +108,36 @@ class Settings(BaseSettings):
             if len(self.mail_relay_secret) < 32:
                 raise ValueError("MAIL_RELAY_SECRET обязателен и должен быть не короче 32 символов")
         return self
+
+    def _parse_autoflow_origins(self) -> frozenset[str]:
+        found: set[str] = set()
+        for raw in self.autoflow_origins.split(","):
+            item = raw.strip().rstrip("/").lower()
+            if not item:
+                continue
+            parts = urlsplit(item)
+            if (
+                parts.scheme not in ("https", "http")
+                or not parts.hostname
+                or parts.path
+                or parts.query
+                or parts.fragment
+                or parts.username
+                or parts.password
+                or "*" in item
+            ):
+                raise ValueError("AUTOFLOW_ORIGINS: нужны адреса вида https://host без пути и *")
+            if self.env == "prod" and parts.scheme != "https":
+                raise ValueError("В prod AUTOFLOW_ORIGINS должны начинаться с https://")
+            found.add(f"{parts.scheme}://{parts.netloc}")
+        if self.autoflow_domain:
+            found.add(f"https://{self.autoflow_domain}")
+        return frozenset(found)
+
+    @property
+    def autoflow_origin_set(self) -> frozenset[str]:
+        """Разрешённые источники (Origin) формы пилота; пусто — приём закрыт."""
+        return self._parse_autoflow_origins()
 
     @property
     def cookie_secure_effective(self) -> bool:

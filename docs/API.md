@@ -19,15 +19,15 @@
 | 403 | `ACCOUNT_BLOCKED` | аккаунт заблокирован (verify) |
 | 403 | `FORBIDDEN` | не owner |
 | 403 | `CSRF_FAILED` | нет/неверный `X-CSRF-Token` |
-| 403 | `ORIGIN_FORBIDDEN` | Origin/Referer не совпадает с `PUBLIC_ORIGIN` |
+| 403 | `ORIGIN_FORBIDDEN` | Origin/Referer не совпадает с `PUBLIC_ORIGIN` (для публичной формы пилота — с `AUTOFLOW_ORIGINS`; там Origin/Referer обязателен) |
 | 404 | `NOT_FOUND` | нет ресурса |
 | 409 | `LAST_OWNER` | блокировка последнего owner |
 | 409 | `STAGE_CONFLICT` | `expected_stage` не совпал с текущей стадией (`current_stage` в ответе) |
 | 409 | `SUPPRESSION_PERMANENT` | стадию `lost` (отказ) нельзя вернуть |
 | 409 | `INVALID_STATE` | недопустимый переход состояния (отклонить архивную компанию) |
 | 409 | `IMPORT_CONFLICT` | данные изменились во время импорта, три попытки не помогли |
-| 413 | `PAYLOAD_TOO_LARGE` | тело импорта больше 2 МБ |
-| 415 | `UNSUPPORTED_MEDIA_TYPE` | импорт: не `text/csv` и не JSON |
+| 413 | `PAYLOAD_TOO_LARGE` | тело импорта больше 2 МБ; тело заявки на пилот больше 8 КБ |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | импорт: не `text/csv` и не JSON; заявка на пилот: не `application/json` |
 | 422 | `INVALID_CURSOR` | курсор повреждён или от другой сортировки |
 | 422 | `EMPTY_FILE` | в CSV нет строк с данными |
 | 422 | `TOO_MANY_ROWS` | больше 5000 строк данных |
@@ -149,6 +149,8 @@ Commit (`dry_run=false`) не принимает от клиента ни `issue
 
 `companies_week` — создано за 7 суток; `suitable` — `score ≥ порога`, без отклонённых и отказов; `top_companies` — до 4 лучших (без отклонённых и отказов); `recent` — 5 последних событий. Порог — `SCORE_THRESHOLD` (по умолчанию 75). Показатели, которых в БД пока нет (черновики, диалоги, задачи), в ответ не включены — UI должен их скрывать, а не рисовать нули.
 
+`pilot_requests_new` — число заявок на пилот AutoFlow со статусом `new`; **только для owner**, у остальных пользователей `null`.
+
 ## Проверка сайтов, очередь, кампании, источники (Фаза 3)
 
 Все эндпоинты — для активного пользователя (401 / 403 `ACCOUNT_PENDING`), мутации — с CSRF и записью в `audit_logs`. Ответы — snake_case, даты ISO 8601 UTC. Задачи выполняет отдельный процесс `python -m app.worker` (очередь в PostgreSQL, ADR-017); сам API сайты не загружает.
@@ -198,13 +200,68 @@ Campaign = {"id": "uuid", "name": "…", "regions": [], "categories": [], "filte
 ```
 Подробности — `docs/SOURCES_AND_LICENSES.md`. Меры защиты загрузчика — `docs/SECURITY.md`.
 
+## AutoFlow: заявки на пилот
+
+Серверная часть формы «Хочу пилот» с лендинга AutoFlow. Таблица `pilot_requests` (миграция `0004`, аддитивная; откат `downgrade 0003` удаляет таблицу вместе с заявками).
+
+### `POST /autoflow/pilot-requests` — публичный (без входа и без CSRF)
+
+Запрос с другого origin (сайт AutoFlow). `Content-Type: application/json`, тело до 8 КБ:
+
+```json
+{"business_name": "Север Авто", "city": "Казань", "contact_name": "Иван Петров",
+ "phone": "+7 (900) 123-45-67", "email": null, "consent": true, "website": "",
+ "consent_text_version": "2026-11-v1"}
+```
+
+| Поле | Правила |
+|---|---|
+| `business_name` | строка 1–120 символов |
+| `city`, `contact_name` | строка 1–80 символов; ссылки (`://`, `www.`, `t.me/`) не допускаются |
+| `phone` | `null`/`""` или российский номер: `+7…`, `8…`, `7…`, 10 цифр (пробелы, скобки, дефисы, точки допустимы); хранится как `+7XXXXXXXXXX`; коды 3xx/4xx/8xx/9xx |
+| `email` | `null`/`""` или корректный адрес (≤ 254), хранится в нижнем регистре |
+| — | **хотя бы один** из `phone`/`email` |
+| `consent` | строго `true` (булево) |
+| `website` | honeypot, у людей `""`; любое непустое значение → `202` без записи |
+| `consent_text_version` | необязательно, `[A-Za-z0-9._-]{1,32}`; по умолчанию `PILOT_CONSENT_VERSION` |
+
+Текстовые поля: NFC, пробелы схлопываются; управляющие, bidi- и «невидимые» символы, `<` и `>` — отказ. Типы строгие (число вместо строки → `422`). Неизвестные поля игнорируются.
+
+Ответ: **всегда `202 {"status": "accepted"}`** — одинаково для новой заявки, дубля и honeypot (ничего не раскрываем). Ошибки: `422 VALIDATION_ERROR` (без эха введённых данных), `415`, `413`, `403 ORIGIN_FORBIDDEN`, `429 RATE_LIMITED` (+ `Retry-After`).
+
+- **Дедупликация:** тот же телефон ИЛИ e-mail за последние 24 ч (любой статус) → `202` без записи.
+- **Лимиты** (скользящие, в таблице `rate_limits`): на хэш IP — 5/час и 20/сутки; общий — 300/сутки (`PILOT_IP_PER_HOUR`, `PILOT_IP_PER_DAY`, `PILOT_GLOBAL_PER_DAY`). Считаются и дубли; запросы с ошибкой валидации и honeypot — нет. IP хранится только как HMAC-хэш с `SECRET_KEY`.
+- **Origin и CORS:** разрешены только источники из `AUTOFLOW_ORIGINS` (список через запятую) и `https://AUTOFLOW_DOMAIN`. По умолчанию список пуст — эндпойнт закрыт (любой запрос → `403`). `Origin` (или `Referer`) **обязателен** и должен совпасть; иначе `403 ORIGIN_FORBIDDEN`, заявка не создаётся. Для разрешённого источника в ответах (включая `422`/`429`) есть `Access-Control-Allow-Origin: <origin>`, `Vary: Origin`, `Access-Control-Expose-Headers: X-Request-ID, Retry-After`; без `Allow-Credentials`. Preflight `OPTIONS` → `204` (`Allow-Methods: POST, OPTIONS`, `Allow-Headers: Content-Type`, `Max-Age: 600`). Остальные эндпойнты CORS не получают, а мутации с Origin сайта AutoFlow получают `403`.
+- Сохраняются также `consent_at`, `consent_text_version`, `ip_hash`, `user_agent_short` (≤ 120 символов); владельцу `ip_hash` и user-agent не отдаются.
+
+### `GET /autoflow/pilot-requests` — только owner
+
+Параметры: `status` (`new|contacted|accepted|declined|spam`), `limit` (1–100, по умолчанию 50), `cursor`. Порядок: новые сверху (`created_at`, `id` по убыванию). Курсор привязан к фильтру `status` (иначе `422 INVALID_CURSOR`).
+
+```json
+{"items": [{"id": "uuid", "business_name": "…", "city": "…", "contact_name": "…",
+            "phone": "+79001234567", "email": null, "status": "new", "note": "",
+            "consent_at": "…", "consent_text_version": "2026-11-v1",
+            "created_at": "…", "updated_at": "…"}],
+ "next_cursor": null}
+```
+
+Обычный пользователь — `403 FORBIDDEN`, ожидающий одобрения — `403 ACCOUNT_PENDING`, без входа — `401`.
+
+### `PATCH /autoflow/pilot-requests/{id}` (CSRF) — только owner
+
+Тело `{"status"?, "note"?}` (хотя бы одно поле; `note` ≤ 2000 символов, пустая строка очищает; другие поля → `422`). Ответ — заявка (как в списке). `404 NOT_FOUND` — нет такой заявки. Изменения пишутся в `audit_logs` (`pilot_request.update`: `status_from`/`status_to`, `note_changed`; текст заметки в аудит не попадает). Без изменений аудит не пишется.
+
+### Персональные данные и аудит
+Телефон, e-mail и имена хранятся только в `pilot_requests`. В логи и `audit_logs` не попадают: при создании пишется `pilot_request.created` с `entity_id` и признаками `has_phone`/`has_email`/`consent_text_version`. Уведомление владельца: счётчик `pilot_requests_new` в `GET /dashboard` и запись аудита; уведомления по e-mail — отдельным шагом (`docs/AUTOFLOW.md`).
+
 ## Здоровье (без авторизации, вне префикса)
 
 - `GET /healthz` — liveness; `GET /readyz` — проверка БД.
 
 ## CSRF и Origin
 
-Все мутации (POST/PUT/PATCH/DELETE): если есть `Origin` (или `Referer`), он должен совпадать с `PUBLIC_ORIGIN`. Мутации с сессией (кроме `/auth/otp/*`) требуют заголовок `X-CSRF-Token`, равный cookie `lh_csrf` (и подписанному токену сессии). `GET /auth/me` пересоздаёт `lh_csrf`, если cookie потеряна.
+Все мутации (POST/PUT/PATCH/DELETE): если есть `Origin` (или `Referer`), он должен совпадать с `PUBLIC_ORIGIN`. Единственное исключение — публичный `POST /autoflow/pilot-requests`: там проверка по `AUTOFLOW_ORIGINS` (см. выше). Мутации с сессией (кроме `/auth/otp/*`) требуют заголовок `X-CSRF-Token`, равный cookie `lh_csrf` (и подписанному токену сессии). `GET /auth/me` пересоздаёт `lh_csrf`, если cookie потеряна.
 
 ## Переменные окружения
 
@@ -223,6 +280,10 @@ Campaign = {"id": "uuid", "name": "…", "regions": [], "categories": [], "filte
 | `WORKER_POLL_SECONDS` | `2` | пауза опроса пустой очереди |
 | `JOB_LOCK_TIMEOUT_SECONDS` | `300` | через сколько «зависшая» задача возвращается в очередь |
 | `WORKER_HEARTBEAT_FILE` | `/tmp/lh-worker.heartbeat` | файл для healthcheck воркера (`python -m app.worker --healthcheck`) |
+| `AUTOFLOW_ORIGINS` | пусто | источники (через запятую, `https://host`, без путей и `*`; в prod только https), которым разрешена публичная форма пилота и CORS на ней; пусто — приём закрыт |
+| `AUTOFLOW_DOMAIN` | пусто | домен лендинга AutoFlow (`autoflow.example.com`); добавляет `https://<домен>` к разрешённым источникам |
+| `PILOT_CONSENT_VERSION` | `2026-11-v1` | версия текста согласия, если форма её не прислала |
+| `PILOT_IP_PER_HOUR`, `PILOT_IP_PER_DAY`, `PILOT_GLOBAL_PER_DAY` | `5`, `20`, `300` | лимиты приёма заявок на хэш IP и общий |
 | `ALLOW_PRIVATE_FETCH_FOR_TESTS` | `false` | только `ENV=dev`: отключает проверку адресов при загрузке сайтов (тесты на localhost); в prod — ошибка конфигурации |
 | `MAIL_BACKEND` | `console` | `http` (HTTPS-ретранслятор, основной в prod), `smtp` или `console`; `console` запрещён в prod |
 | `MAIL_RELAY_URL` | — | для `http`: адрес ретранслятора, в prod только `https://`, например `https://vaylonet.ru/lh-mail.php` |
