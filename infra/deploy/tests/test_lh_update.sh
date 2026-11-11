@@ -69,7 +69,8 @@ case "$1" in
       ps) [ "$2" = web ] && [ -s "$D/running_web" ] && echo web; [ "$2" = api ] && [ -s "$D/running_api" ] && echo api; true ;;
       restart|exec) echo "compose $sub $*" ;;
     esac ;;
-  run) echo '$2a$14$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345' ;;
+  run) if [ "${LH_CADDY_INVALID:-0}" = 1 ] && printf '%s ' "$@" | grep -q 'caddy validate'; then exit 1; fi
+       echo '$2a$14$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345' ;;
 esac
 exit 0
 EOF
@@ -252,6 +253,16 @@ OUT="$(printf '\ny\nn\n' | cfg mail-relay)"
 [ "$(genv MAIL_RELAY_SECRET)" != "$RS" ] && ok "секрет перегенерирован по запросу" || bad "секрет не изменился"
 reset_log; OUT="$(cfg smtp-test t@example.com)"
 dlog_has "smtp-test работает и в режиме http" "exec -T api python -m app.cli send-test-mail t@example.com"
+
+section "13. Невалидная конфигурация Caddy: выкат отменяется до установки, прежняя версия остаётся"
+S8="$(mksha 8)"; reset_log; before_web="$(genv WEB_IMAGE)"; before_gate="$(cat "$APP/caddy/gate.caddy" 2>/dev/null || true)"
+set_head "$S8" success; LH_CADDY_INVALID=1 run_update
+has "сообщение о непройденной проверке Caddy" "не прошла проверку"
+eq ".failed_sha" "$(rf .failed_sha)" "$S8"
+eq "образов не собиралось" "$(builds)" "0"
+eq "WEB_IMAGE не менялся" "$(genv WEB_IMAGE)" "$before_web"
+eq "gate.caddy не тронут" "$(cat "$APP/caddy/gate.caddy" 2>/dev/null || true)" "$before_gate"
+if grep -q ' up ' "$D/docker.log"; then bad "compose up не должен вызываться"; else ok "compose up не вызывался"; fi
 
 printf '\nИтог: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

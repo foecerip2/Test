@@ -118,6 +118,18 @@ git -C "$SRC" fetch --depth=1 origin "$sha"
 git -C "$SRC" checkout --force --detach "$sha"
 [ "$(git -C "$SRC" rev-parse HEAD)" = "$sha" ] || { log "SHA после загрузки не совпал — отмена"; exit 1; }
 
+# 2b. Конфигурация Caddy проверяется на временной копии ДО любой установки: ошибка в ней не должна задеть работающий сайт
+CAND="$(mktemp -d)"
+cp "$SRC/infra/caddy/Caddyfile" "$CAND/Caddyfile"
+bh="$(get_env BASIC_HASH)"
+if [ -n "$bh" ]; then cp "$SRC/infra/caddy/gate.on.caddy" "$CAND/gate.caddy"; else cp "$SRC/infra/caddy/gate.off.caddy" "$CAND/gate.caddy"; fi
+if ! docker run --rm -v "$CAND:/etc/caddy:ro" -e "DOMAIN=$(get_env DOMAIN)" -e "BASIC_USER=$(get_env BASIC_USER)" -e "BASIC_HASH=${bh//\$\$/\$}" \
+     caddy:2.8-alpine caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+  log "Конфигурация Caddy из коммита ${sha:0:7} не прошла проверку — выкат отменён, продолжает работать прежняя версия"
+  echo "$sha" > "$APP/.failed_sha"; rm -rf "$CAND"; exit 1
+fi
+rm -rf "$CAND"
+
 # 3. Конфигурация из коммита: compose и Caddy (Caddyfile + gate.caddy по наличию BASIC_HASH)
 install -m 0644 "$SRC/infra/compose/docker-compose.prod.yml" "$APP/docker-compose.prod.yml.new" && mv -f "$APP/docker-compose.prod.yml.new" "$APP/docker-compose.prod.yml"
 install -d -m 0755 "$APP/caddy"
