@@ -149,6 +149,20 @@
 .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 18px; }
 @media (max-width: 700px) { .dialog-actions .btn { flex: 1; } }
 
+/* Dialog variant "sheet": карточка на десктопе, нижний лист (bottom sheet) на телефоне.
+   Переменная --kb (высота экранной клавиатуры) выставляется из Modal через visualViewport. */
+.dialog-backdrop[data-variant="sheet"] { animation: lh-fade 0.2s ease-out backwards; }
+.dialog[data-variant="sheet"] { animation: lh-rise 0.22s ease-out backwards; }
+.dialog-backdrop[data-phase="leaving"] { opacity: 0; transition: opacity 0.3s ease; }
+@keyframes lh-fade { from { opacity: 0; } }
+@keyframes lh-rise { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+@keyframes lh-sheet { from { transform: translateY(100%); } }
+@media (max-width: 700px) {
+  .dialog-backdrop[data-variant="sheet"] { place-items: end stretch; padding: 0; padding-bottom: var(--kb, 0px); }
+  .dialog[data-variant="sheet"] { max-width: none; border-radius: 20px 20px 0 0; max-height: calc(100dvh - var(--kb, 0px) - 8px); animation: lh-sheet 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+  .dialog[data-variant="sheet"]::before { content: ""; display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--border-dark); margin: 0 auto 14px; }
+}
+
 /* Tabs */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; overflow-x: auto; }
 .tab { border: 0; background: none; min-height: var(--hit); padding: 0 14px; font-size: 0.8125rem; font-weight: 700; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; margin-bottom: -1px; }
