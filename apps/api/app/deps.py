@@ -101,6 +101,13 @@ def require_csrf(
     return auth
 
 
+def require_active_user_csrf(
+    user: User = Depends(require_active_user), _csrf: AuthContext = Depends(require_csrf)
+) -> User:
+    """Активный пользователь + CSRF для мутаций. Порядок: 401, 403 pending, 403 CSRF."""
+    return user
+
+
 def require_owner_csrf(
     user: User = Depends(require_owner), _csrf: AuthContext = Depends(require_csrf)
 ) -> User:
