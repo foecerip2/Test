@@ -4,7 +4,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
 import { Async, ErrorState } from "./ui";
+import { AccountBlocked, PendingApproval } from "./auth/PendingApproval";
 import { getApi } from "@/lib/api";
+import { userInitials, userLabel } from "@/lib/auth";
 import { useQuery } from "@/lib/hooks";
 
 const NAV_MAIN = [
@@ -42,7 +44,6 @@ function useOutside(ref: React.RefObject<HTMLElement | null>, open: boolean, clo
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const path = usePathname();
-  const [authed, setAuthed] = useState<"loading" | "yes">("loading");
   const [drawer, setDrawer] = useState(false);
   const [bell, setBell] = useState(false);
   const [profile, setProfile] = useState(false);
@@ -62,8 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (me.loading || me.error) return;
-    if (me.data) setAuthed("yes");
-    else router.replace("/login");
+    if (!me.data) router.replace("/login");
   }, [me.loading, me.error, me.data, router]);
 
   useEffect(() => { setDrawer(false); setBell(false); setProfile(false); }, [path]);
@@ -97,7 +97,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [drawer]);
 
   if (me.error && !me.data) return <ErrorState error={me.error} onRetry={me.reload} />;
-  if (authed !== "yes") return <div className="state" role="status"><p>Загрузка…</p></div>;
+  if (!me.data) return <div className="state" role="status"><p>Загрузка…</p></div>;
+  if (me.data.status === "pending") return <PendingApproval user={me.data} onRecheck={me.reload} />;
+  if (me.data.status === "blocked") return <AccountBlocked user={me.data} />;
+  const user = me.data;
+  const initials = userInitials(user);
 
   const s = summary.data;
   const counts: Record<string, number | undefined> = { companies: s?.companiesTotal, approvals: s?.awaitingApproval, inbox: s?.unread };
@@ -143,8 +147,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="profile-wrap" ref={profRef}>
           <button className="profile" ref={profBtn} aria-haspopup="menu" aria-expanded={profile} aria-controls={profile ? "profile-menu" : undefined} onClick={() => setProfile((v) => !v)}
             onKeyDown={(e) => { if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !profile) { e.preventDefault(); setProfile(true); } }}>
-            <span className="avatar" aria-hidden="true">{me.data?.initials ?? "—"}</span>
-            <span><strong>{me.data?.name}</strong><small>{me.data?.email}</small><span className="sr-only">, меню профиля</span></span>
+            <span className="avatar" aria-hidden="true">{initials}</span>
+            <span><strong>{userLabel(user)}</strong><small>{user.email}</small><span className="sr-only">, меню профиля</span></span>
           </button>
           {/* Меню идёт после кнопки в DOM, чтобы порядок фокуса совпадал с логикой; визуально оно над кнопкой. */}
           {profile && (
@@ -187,7 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Async>
               </div>
             )}
-            <span className="avatar" style={{ width: 32, height: 32 }} aria-hidden="true">{me.data?.initials}</span>
+            <span className="avatar" style={{ width: 32, height: 32 }} aria-hidden="true">{initials}</span>
           </div>
         </header>
         <main id="content" tabIndex={-1}>{children}</main>

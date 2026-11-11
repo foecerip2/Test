@@ -185,8 +185,16 @@ export interface Summary {
 
 export interface Me { email: string; initials: string; name: string }
 
+export type UserRole = "owner" | "user";
+export type UserStatus = "active" | "pending" | "blocked";
+export interface AuthUser { id: string; email: string; role: UserRole; status: UserStatus }
+export interface OtpChallenge { challengeId: string; expiresIn: number; resendIn: number }
+export interface OtpVerified { user: AuthUser; isNew: boolean }
+
+export interface ApiErrorDetails { attemptsLeft?: number; retryAfter?: number; requestId?: string }
+
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string) {
+  constructor(public status: number, public code: string, message: string, public details: ApiErrorDetails = {}) {
     super(message);
   }
 }
@@ -194,9 +202,13 @@ export class ApiError extends Error {
 export interface Api {
   readonly mode: "mock" | "live";
   subscribe(cb: () => void): () => void;
+  /** "live" — сессия на сервере (NEXT_PUBLIC_AUTH_MODE=live); "mock" — демо-вход с кодом 123456. */
+  readonly authMode: "mock" | "live";
   auth: {
-    me(): Promise<Me | null>;
-    login(email: string, password: string): Promise<Me>;
+    requestCode(email: string): Promise<OtpChallenge>;
+    verifyCode(challengeId: string, code: string): Promise<OtpVerified>;
+    resendCode(challengeId: string): Promise<{ resendIn: number }>;
+    me(): Promise<AuthUser | null>;
     logout(): Promise<void>;
   };
   summary(): Promise<Summary>;

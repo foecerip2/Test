@@ -7,11 +7,12 @@ import { classifyReply } from "../classify";
 import { sha256Hex } from "../hash";
 import { mapImportRows, toCsv, canonicalDomain } from "../normalize";
 import { SCORE_RULE_VERSION, scoreCompany } from "../scoring";
+import { createMockAuth } from "./mock-auth";
 import { SEED_COMPANIES, SEED_CONVERSATIONS, type SeedCompany } from "./seed";
 import {
   ApiError, type ActivityEvent, type Api, type AuditEntry, type Campaign, type Channel, type Company, type CompanyDetail,
   type CompanyFilter, type Consent, type Contact, type Conversation, type ConversationStage, type CrmStage, type Draft,
-  type DisplayStatus, type Fact, type ImportRow, type Job, type Me, type Message, type OutboxPreview, type ReasonCode,
+  type DisplayStatus, type Fact, type ImportRow, type Job, type Message, type OutboxPreview, type ReasonCode,
   type Settings, type SourceConfig, type SuppressionEntry, type Task, type Summary,
 } from "./types";
 
@@ -26,7 +27,11 @@ interface CompanyRec extends SeedCompany {
 }
 type DraftRec = Omit<Draft, "currentHash" | "approvalStale">;
 
-export interface MockOptions { empty?: boolean; fail?: boolean; slow?: boolean }
+export interface MockOptions {
+  empty?: boolean; fail?: boolean; slow?: boolean;
+  /** Опции демо-входа (см. mock-auth.ts). */
+  fastResend?: boolean; fastExpire?: boolean; mailError?: boolean; now?: () => number; authLatency?: number;
+}
 
 function buildBody(c: CompanyRec): string {
   const f = c.factsRec.find((x) => x.kind === "confirmed");
@@ -174,27 +179,12 @@ export function createMockApi(opts: MockOptions = {}): Api {
     return out;
   }
 
-  // ---------- сессия ----------
-  const SESSION_KEY = "lh_demo_session";
-  const store = () => { try { return globalThis.sessionStorage ?? null; } catch { return null; } };
-  const me = (email: string): Me => ({ email, name: "Администратор", initials: email.slice(0, 2).toUpperCase() });
-
   const api: Api = {
     mode: "mock",
     subscribe(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
 
-    auth: {
-      async me() { return gate(() => { const e = store()?.getItem(SESSION_KEY); return e ? me(e) : null; }); },
-      async login(email, password) {
-        return gate(() => {
-          if (!/^\S+@\S+\.\S+$/.test(email)) throw new ApiError(422, "VALIDATION", "Введите корректный email");
-          if (password.length < 8) throw new ApiError(401, "INVALID_CREDENTIALS", "Неверный email или пароль");
-          store()?.setItem(SESSION_KEY, email);
-          return me(email);
-        }, true);
-      },
-      async logout() { return gate(() => { store()?.removeItem(SESSION_KEY); }, true); },
-    },
+    authMode: "mock",
+    auth: createMockAuth({ fastResend: opts.fastResend, fastExpire: opts.fastExpire, mailError: opts.mailError, now: opts.now, latency: opts.authLatency }),
 
     async summary(): Promise<Summary> {
       return gate(async () => {

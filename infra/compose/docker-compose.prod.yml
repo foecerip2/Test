@@ -1,7 +1,95 @@
-# VPS-1 (control plane). Сейчас: web + caddy. API/PostgreSQL/Redis добавляются в Фазе 2.
+# VPS-1 (1 ядро, ~1.9 ГБ RAM). Сервисы: web + caddy всегда; db + api — профиль `api`
+# (lh-update прописывает COMPOSE_PROFILES=api в .env, когда в коммите есть apps/api/Dockerfile).
+#
+# Бюджет памяти (mem_limit — потолок, обычно потребление ниже):
+#   web 384 + api 256 + db 256 + caddy 96 = 992 МБ; на ОС, docker, lh-update и page cache остаётся ~900 МБ из 1.9 ГБ.
+#   Сборка образов (node до ~1 ГБ) идёт на самом сервере поверх работающего стека, поэтому нужен swap 3 ГБ (ставит install.sh).
 name: leadhunter
 
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
 services:
+  db:
+    profiles: ["api"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: leadhunter
+      POSTGRES_DB: leadhunter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    # Малый профиль памяти под 256 МБ. Порт НЕ публикуется: БД доступна только из сети compose.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]   # нужны entrypoint postgres (chown + gosu)
+    mem_limit: 256m
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leadhunter -d leadhunter"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging: *logging
+    networks: [internal]
+
+  api:
+    profiles: ["api"]
+    image: ${API_IMAGE:-lh-api:none}
+    pull_policy: never   # образ собирается на сервере службой lh-update
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      ENV: prod
+      DATABASE_URL: ${DATABASE_URL:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      MAIL_BACKEND: ${MAIL_BACKEND:-smtp}
+      MAIL_RELAY_URL: ${MAIL_RELAY_URL:-}
+      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-ssl}
+    depends_on:
+      db: { condition: service_healthy }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 256m
+    healthcheck:
+      # /readyz проверяет БД; python есть в любом образе API
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=4).status == 200 else 1)"]
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 40s   # на старте контейнер применяет alembic upgrade head
+    logging: *logging
+    networks: [internal]
+
   web:
     image: ${WEB_IMAGE:?WEB_IMAGE не задан}
     pull_policy: never   # образ собирается на сервере службой lh-update
@@ -19,9 +107,7 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+    logging: *logging
     networks: [internal]
 
   caddy:
@@ -35,22 +121,22 @@ services:
       - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN не задан}
-      BASIC_USER: ${BASIC_USER:?}
-      BASIC_HASH: ${BASIC_HASH:?}
+      # Шлюз basic-auth включается, только если BASIC_HASH непустой (см. gate.caddy, его выбирают lh-update/lh-config)
+      BASIC_USER: ${BASIC_USER:-owner}
+      BASIC_HASH: ${BASIC_HASH:-}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy:/etc/caddy:ro     # каталог (а не файл): замена файлов видна контейнеру
       - caddy_data:/data
       - caddy_config:/config
     security_opt: ["no-new-privileges:true"]
     mem_limit: 96m
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+    logging: *logging
     networks: [internal]
 
 volumes:
   caddy_data:
   caddy_config:
+  pgdata:
 
 networks:
   internal:

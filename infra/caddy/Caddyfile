@@ -1,11 +1,6 @@
 {$DOMAIN} {
 	encode zstd gzip
 
-	# Временный шлюз до реальной аутентификации (Фаза 2). После Фазы 2 блок удаляется.
-	basic_auth {
-		{$BASIC_USER} {$BASIC_HASH}
-	}
-
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -15,5 +10,15 @@
 		-Server
 	}
 
-	reverse_proxy web:3000
+	# Необязательный шлюз basic-auth. gate.caddy — копия gate.on.caddy (если BASIC_HASH в .env непустой)
+	# или gate.off.caddy (пусто); выбор делают lh-update / `lh-config gate`.
+	import /etc/caddy/gate.caddy
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
 }

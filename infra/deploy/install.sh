@@ -9,8 +9,10 @@
 #   3. создаёт /opt/leadhunter и ставит службу `lh-update` (systemd-таймер каждые ~3 мин):
 #      она следит за веткой main на GitHub; как только там появляется новый коммит с зелёными тестами —
 #      собирает и запускает сайт, при сбое сама откатывается. В main код попадает только с разрешения владельца (в чате);
-#   4. выводит временный пароль входа на сайт (один раз).
-# Секретов, токенов и входящего SSH для деплоя не нужно.
+#   4. генерирует в /opt/leadhunter/.env секреты БД и API (не затирая существующие) и ставит `lh-config`
+#      (настройка почты/владельца на сервере без передачи секретов в чат).
+# Секретов, токенов и входящего SSH для деплоя не нужно. Вход на сайт — по коду из письма (ADR-015);
+# basic-auth по умолчанию выключен (включается `lh-config gate on`).
 set -euo pipefail
 
 REPO=""; REF="main"; DOMAIN="ai.vaylonet.ru"; HARDEN=0; SKIP_FIRST=0; NEW_PASS=0
@@ -21,7 +23,7 @@ while [ $# -gt 0 ]; do
     --domain) DOMAIN="${2:-}"; shift 2 ;;
     --harden-ssh) HARDEN=1; shift ;;
     --no-first-run) SKIP_FIRST=1; shift ;;
-    --new-password) NEW_PASS=1; shift ;;
+    --new-password) NEW_PASS=1; shift ;;   # no-op: basic-auth больше не основной механизм (см. `lh-config gate on`)
     *) echo "Неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
 done
@@ -80,25 +82,20 @@ say "Каталог /opt/leadhunter и конфигурация"
 install -d -m 0755 /opt/leadhunter
 printf 'REPO=%s\nBRANCH=main\n' "$REPO" > /opt/leadhunter/lh.conf
 ENVF=/opt/leadhunter/.env
-[ -f "$ENVF" ] || { install -m 0600 /dev/null "$ENVF"; printf 'DOMAIN=%s\nBASIC_USER=owner\nBASIC_HASH=\nWEB_IMAGE=\n' "$DOMAIN" > "$ENVF"; }
-[ "$NEW_PASS" -eq 1 ] && sed -i 's|^BASIC_HASH=.*|BASIC_HASH=|' "$ENVF"
-if ! grep -qE '^BASIC_HASH=.+' "$ENVF"; then
-  PASS="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)"
-  HASH="$(docker run --rm caddy:2.8-alpine caddy hash-password --plaintext "$PASS")"
-  sed -i "s|^BASIC_HASH=.*|BASIC_HASH=${HASH//\$/\$\$}|" "$ENVF"
-  echo
-  echo "################################################################"
-  echo " Временный пароль входа на сайт (до появления настоящей авторизации)"
-  echo "   логин: owner     пароль: ${PASS}"
-  echo " Сохраните его в менеджере паролей. Показан ТОЛЬКО сейчас."
-  echo "################################################################"
-fi
+[ -f "$ENVF" ] || install -m 0600 /dev/null "$ENVF"
+[ "$NEW_PASS" -eq 1 ] && echo "Флаг --new-password больше ничего не делает: сайт защищён входом по e-mail коду; шлюз basic-auth — 'lh-config gate on'."
 
 say "Служба обновления lh-update"
 if [ -n "${LH_UPDATE_FILE:-}" ]; then cp "$LH_UPDATE_FILE" /usr/local/sbin/lh-update
 else curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/infra/deploy/lh-update.sh" -o /usr/local/sbin/lh-update; fi
 bash -n /usr/local/sbin/lh-update || die "Скачанный lh-update повреждён"
 chmod 0755 /usr/local/sbin/lh-update
+if [ -n "${LH_CONFIG_FILE:-}" ]; then cp "$LH_CONFIG_FILE" /usr/local/sbin/lh-config
+else curl -fsSL "https://raw.githubusercontent.com/$REPO/$REF/infra/deploy/lh-config.sh" -o /usr/local/sbin/lh-config; fi
+bash -n /usr/local/sbin/lh-config || die "Скачанный lh-config повреждён"
+chmod 0755 /usr/local/sbin/lh-config
+# секреты БД/API генерируются один раз; существующие значения не затираются
+/usr/local/sbin/lh-config init --domain "$DOMAIN"
 cat > /etc/systemd/system/lh-update.service <<'UNIT'
 [Unit]
 Description=LeadHunter: обновление из GitHub Releases
@@ -170,5 +167,7 @@ cat <<EOF
 Пауза автообновления: touch /opt/leadhunter/.paused (возобновить: rm /opt/leadhunter/.paused)
 Откат: lh-update --rollback (откатанная версия больше не выкатывается)
 Логи: journalctl -u lh-update -n 50
+Почта для кодов входа: выполните на сервере 'lh-config smtp', затем 'lh-config owner ВАШ@ПОЧТА' (см. docs/OPERATIONS.md).
+Пока почта не настроена, регистрация отвечает 503 MAIL_UNAVAILABLE (так задумано).
 Сейчас: смените пароль root и по возможности перейдите на вход по SSH-ключу (флаг --harden-ssh).
 EOF
