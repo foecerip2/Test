@@ -90,6 +90,8 @@ test.describe("вход по email и коду", () => {
     await expect(cell(page, 1)).toHaveAttribute("aria-invalid", "true");
     await page.keyboard.type("111111");
     await expect(alert).toHaveText("Неверный код. Осталось попыток: 3");
+    // Фокус возвращается на первую ячейку в следующем кадре — ждём его, иначе ввод может уйти «в никуда».
+    await expect(cell(page, 1)).toBeFocused();
     // Ошибка исчезает, как только начат новый ввод.
     await page.keyboard.type("1");
     await expect(dialog.getByRole("alert").filter({ hasText: "Неверный код" })).toHaveCount(0);

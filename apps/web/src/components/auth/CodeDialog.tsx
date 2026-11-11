@@ -47,7 +47,11 @@ export function CodeDialog({ email, challenge, onClose, onChangeEmail, onDone }:
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
-  const focusFirst = useCallback(() => { requestAnimationFrame(() => input.current?.focus(0)); }, []);
+  // Фокус на первую ячейку ставится ПОСЛЕ коммита, когда поля уже разблокированы (иначе на медленных устройствах
+  // focus() попадал в ещё заблокированное поле и терялся).
+  const [focusTick, setFocusTick] = useState(0);
+  const focusFirst = useCallback(() => { setFocusTick((t) => t + 1); }, []);
+  useEffect(() => { if (focusTick > 0) input.current?.focus(0); }, [focusTick]);
 
   // Срок действия кода: по истечении просим отправить новый.
   useEffect(() => {
