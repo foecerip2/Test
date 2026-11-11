@@ -6,6 +6,7 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
+COPY apps/android/package.json apps/android/
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
