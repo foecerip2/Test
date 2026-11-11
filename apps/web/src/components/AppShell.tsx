@@ -7,7 +7,8 @@ import { Async, ErrorState } from "./ui";
 import { AccountBlocked, PendingApproval } from "./auth/PendingApproval";
 import { getApi } from "@/lib/api";
 import { userInitials, userLabel } from "@/lib/auth";
-import { useQuery } from "@/lib/hooks";
+import { usePendingUsers, useQuery } from "@/lib/hooks";
+import { pendingText } from "@/lib/users";
 
 const NAV_MAIN = [
   { href: "/overview", label: "Обзор", icon: "layout" },
@@ -60,6 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const me = useQuery((a) => a.auth.me());
   const summary = useQuery((a) => a.summary());
   const settings = useQuery((a) => a.settings.get());
+  const pendingUsers = usePendingUsers(me.data?.role === "owner" && me.data.status === "active");
 
   useEffect(() => {
     if (me.loading || me.error) return;
@@ -108,7 +110,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const title = Object.entries(PAGE_TITLES).find(([k]) => path === k || path.startsWith(k + "/"))?.[1] ?? "";
   const isDetail = path.startsWith("/companies/");
   const mock = getApi().mode === "mock";
-  const att = s?.attention ?? [];
+  const att = [
+    ...(pendingUsers ? [{ id: "n-users", title: pendingText(pendingUsers), text: "Откройте «Настройки → Пользователи», чтобы одобрить или отклонить доступ", href: "/settings?tab=users", tone: "amber" as const }] : []),
+    ...(s?.attention ?? []),
+  ];
   const urgent = att.filter((a) => a.tone !== "neutral").length;
 
   const link = (n: { href: string; label: string; icon: string; count?: string }) => {
@@ -183,9 +188,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             {bell && (
               <div className="menu down" role="region" aria-label="Уведомления" id="notif-panel">
                 <Async q={summary} rows={3}>
-                  {(d) => d.attention.length === 0
+                  {() => att.length === 0
                     ? <div className="state" style={{ padding: 24 }}><p style={{ margin: 0 }}>Нет событий, требующих внимания</p></div>
-                    : <ul className="feed" style={{ padding: "6px 14px" }}>{d.attention.map((a) => (
+                    : <ul className="feed" style={{ padding: "6px 14px" }}>{att.map((a) => (
                         <li key={a.id} className="feed-item"><span className="feed-icon" style={a.tone === "red" ? { background: "var(--red-tint)", color: "var(--red)" } : undefined}><Icon name={a.tone === "red" ? "alert" : "bell"} /></span>
                           <div className="feed-text"><strong><Link href={a.href}>{a.title}</Link></strong><p>{a.text}</p></div></li>))}</ul>}
                 </Async>

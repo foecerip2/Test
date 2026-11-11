@@ -3,13 +3,16 @@ import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { CompanyTable } from "@/components/companies/CompanyTable";
 import { ActivityFeed, EmptyState, ErrorState, LoadingSkeleton, MetricCard, PageHeader, Panel } from "@/components/ui";
-import { fmtDay, fmtRel, useDocumentTitle, useQuery } from "@/lib/hooks";
+import { fmtDay, fmtRel, useDocumentTitle, usePendingUsers, useQuery } from "@/lib/hooks";
+import { pendingText } from "@/lib/users";
 
 export default function OverviewPage() {
   useDocumentTitle("Обзор");
   const q = useQuery((a) => a.summary());
   const st = useQuery((a) => a.settings.get());
   const threshold = st.data?.scoreThreshold ?? 75;
+  const me = useQuery((a) => a.auth.me());
+  const pendingUsers = usePendingUsers(me.data?.role === "owner" && me.data.status === "active");
 
   const header = (
     <PageHeader eyebrow={fmtDay(new Date().toISOString()).toUpperCase()} title="Рабочее пространство" subtitle="Ваша система поиска, квалификации и сопровождения компаний."
@@ -34,6 +37,15 @@ export default function OverviewPage() {
   return (
     <>
       {header}
+      {pendingUsers ? (
+        <div className="callout" style={{ marginTop: 0, marginBottom: 22 }} data-testid="pending-users">
+          <div>
+            <h2>{pendingText(pendingUsers)}</h2>
+            <p>Новые пользователи зарегистрировались по коду из письма и не получат доступ, пока вы не одобрите их.</p>
+          </div>
+          <Link href="/settings?tab=users" className="btn">Открыть список пользователей <Icon name="arrow" /></Link>
+        </div>
+      ) : null}
       <div className="metric-grid">
         <MetricCard label="Компании в базе" value={s.companiesTotal} foot={`+${s.companiesWeek} за 7 дней`} icon="building" />
         <MetricCard label="Подходят под продукт" value={s.suitable} foot={`Оценка от ${threshold} баллов`} icon="radar" />

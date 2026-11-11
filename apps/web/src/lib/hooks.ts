@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getApi, type Api } from "./api";
+import { pendingCount } from "./users";
 
 export interface QueryState<T> { data: T | null; error: Error | null; loading: boolean; reload: () => void }
 
@@ -45,4 +46,13 @@ export function fmtRel(iso: string): string {
   if (h < 24) return `${h} ч назад`;
   const d = Math.round(h / 24);
   return d === 1 ? "вчера" : `${d} дн назад`;
+}
+
+/** Число пользователей, ждущих одобрения; только для владельца (иначе null). Ошибки не показываем: это лишь подсказка. */
+export function usePendingUsers(enabled: boolean): number | null {
+  const q = useQuery(async (a) => {
+    if (!enabled) return null;
+    try { return pendingCount(await a.admin.listUsers()); } catch { return null; }
+  }, [enabled]);
+  return enabled ? q.data : null;
 }
