@@ -65,6 +65,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       SECRET_KEY: ${SECRET_KEY:-}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      # Разрешённый Origin для публичной формы заявок AutoFlow (пусто = эндпойнт закрыт)
+      AUTOFLOW_DOMAIN: ${AUTOFLOW_DOMAIN:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       OWNER_EMAIL: ${OWNER_EMAIL:-}
       MAIL_BACKEND: ${MAIL_BACKEND:-smtp}
@@ -107,6 +109,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       SECRET_KEY: ${SECRET_KEY:-}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      # Разрешённый Origin для публичной формы заявок AutoFlow (пусто = эндпойнт закрыт)
+      AUTOFLOW_DOMAIN: ${AUTOFLOW_DOMAIN:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       OWNER_EMAIL: ${OWNER_EMAIL:-}
       MAIL_BACKEND: ${MAIL_BACKEND:-smtp}
