@@ -188,6 +188,8 @@ export interface Me { email: string; initials: string; name: string }
 export type UserRole = "owner" | "user";
 export type UserStatus = "active" | "pending" | "blocked";
 export interface AuthUser { id: string; email: string; role: UserRole; status: UserStatus }
+/** Пользователь в админ-API (только для owner). Даты — ISO 8601. */
+export interface AdminUser { id: string; email: string; role: UserRole; status: UserStatus; createdAt: string; lastLoginAt: string | null }
 export interface OtpChallenge { challengeId: string; expiresIn: number; resendIn: number }
 export interface OtpVerified { user: AuthUser; isNew: boolean }
 
@@ -210,6 +212,12 @@ export interface Api {
     resendCode(challengeId: string): Promise<{ resendIn: number }>;
     me(): Promise<AuthUser | null>;
     logout(): Promise<void>;
+  };
+  /** Управление пользователями (только owner): GET/POST /api/v1/admin/users. */
+  admin: {
+    listUsers(): Promise<AdminUser[]>;
+    approveUser(id: string): Promise<AdminUser>;
+    blockUser(id: string): Promise<AdminUser>;
   };
   summary(): Promise<Summary>;
   companies: {

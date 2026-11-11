@@ -7,6 +7,7 @@ import { classifyReply } from "../classify";
 import { sha256Hex } from "../hash";
 import { mapImportRows, toCsv, canonicalDomain } from "../normalize";
 import { SCORE_RULE_VERSION, scoreCompany } from "../scoring";
+import { createMockAdmin } from "./mock-admin";
 import { createMockAuth } from "./mock-auth";
 import { SEED_COMPANIES, SEED_CONVERSATIONS, type SeedCompany } from "./seed";
 import {
@@ -31,6 +32,8 @@ export interface MockOptions {
   empty?: boolean; fail?: boolean; slow?: boolean;
   /** Опции демо-входа (см. mock-auth.ts). */
   fastResend?: boolean; fastExpire?: boolean; mailError?: boolean; now?: () => number; authLatency?: number;
+  /** Админ-API: ?mock=lastowner — блокировка владельца всегда отвечает LAST_OWNER (гонка на сервере). */
+  lastOwner?: boolean;
 }
 
 function buildBody(c: CompanyRec): string {
@@ -179,12 +182,15 @@ export function createMockApi(opts: MockOptions = {}): Api {
     return out;
   }
 
+  const auth = createMockAuth({ fastResend: opts.fastResend, fastExpire: opts.fastExpire, mailError: opts.mailError, now: opts.now, latency: opts.authLatency });
+
   const api: Api = {
     mode: "mock",
     subscribe(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
 
     authMode: "mock",
-    auth: createMockAuth({ fastResend: opts.fastResend, fastExpire: opts.fastExpire, mailError: opts.mailError, now: opts.now, latency: opts.authLatency }),
+    auth,
+    admin: createMockAdmin({ auth, latency: opts.authLatency, lastOwner: opts.lastOwner, fail: opts.fail, notify: emit }),
 
     async summary(): Promise<Summary> {
       return gate(async () => {

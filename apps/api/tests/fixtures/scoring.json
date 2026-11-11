@@ -1,0 +1,974 @@
+{
+  "rule_version": "rules-v1",
+  "cases": [
+    {
+      "name": "максимум",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 3,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 100,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "ноль",
+      "input": {
+        "businessType": "other",
+        "demandSignals": 0,
+        "siteWorks": false,
+        "onlineBookingDetected": null,
+        "hasBusinessContact": false,
+        "isDuplicate": true,
+        "hasRefusal": true
+      },
+      "score": 0,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 0,
+          "note": "Не целевая категория"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 0,
+          "note": "Найдено признаков: 0"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 0,
+          "note": "Сайт не найден или недоступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 0,
+          "note": "Не проверялось — баллы не начислены"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 0,
+          "note": "Контакт не найден"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 0,
+          "note": "Есть отказ"
+        }
+      ]
+    },
+    {
+      "name": "demand 99",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 99,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 100,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 99"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "онлайн-запись не проверялась",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 3,
+        "siteWorks": true,
+        "onlineBookingDetected": null,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 85,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 0,
+          "note": "Не проверялось — баллы не начислены"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "онлайн-запись обнаружена",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 3,
+        "siteWorks": true,
+        "onlineBookingDetected": true,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 85,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 0,
+          "note": "Онлайн-запись обнаружена"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "сайт не работает, запись не обнаружена — баллов за запись нет",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 3,
+        "siteWorks": false,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 70,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 0,
+          "note": "Сайт не найден или недоступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 0,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "отказ",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 3,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": true
+      },
+      "score": 90,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 0,
+          "note": "Есть отказ"
+        }
+      ]
+    },
+    {
+      "name": "дубликат",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 3,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": true,
+        "hasRefusal": false
+      },
+      "score": 90,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 0,
+          "note": "Помечен как дубликат"
+        }
+      ]
+    },
+    {
+      "name": "смежная категория",
+      "input": {
+        "businessType": "adjacent",
+        "demandSignals": 3,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 87,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 12,
+          "note": "Смежная категория"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 20,
+          "note": "Найдено признаков: 3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "demand 0.5 (округление .5 вверх)",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 0.5,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 84,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 4,
+          "note": "Найдено признаков: 0.5"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "demand 1.5",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 1.5,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 91,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 11,
+          "note": "Найдено признаков: 1.5"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "demand 2.5",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 2.5,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 98,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 18,
+          "note": "Найдено признаков: 2.5"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "demand 1",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 1,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 87,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 7,
+          "note": "Найдено признаков: 1"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "demand 2",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 2,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 94,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 14,
+          "note": "Найдено признаков: 2"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "demand -3 -> 0",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": -3,
+        "siteWorks": true,
+        "onlineBookingDetected": false,
+        "hasBusinessContact": true,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 80,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 0,
+          "note": "Найдено признаков: -3"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 15,
+          "note": "Сайт доступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 15,
+          "note": "Не обнаружена (это не доказательство её отсутствия)"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 15,
+          "note": "Есть публичный бизнес-контакт"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "импорт: автосервис, ничего не проверено",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 0,
+        "siteWorks": false,
+        "onlineBookingDetected": null,
+        "hasBusinessContact": false,
+        "isDuplicate": false,
+        "hasRefusal": false
+      },
+      "score": 35,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 0,
+          "note": "Найдено признаков: 0"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 0,
+          "note": "Сайт не найден или недоступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 0,
+          "note": "Не проверялось — баллы не начислены"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 0,
+          "note": "Контакт не найден"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 10,
+          "note": "Чисто"
+        }
+      ]
+    },
+    {
+      "name": "импорт: кандидат в дубликаты",
+      "input": {
+        "businessType": "autoservice",
+        "demandSignals": 0,
+        "siteWorks": false,
+        "onlineBookingDetected": null,
+        "hasBusinessContact": false,
+        "isDuplicate": true,
+        "hasRefusal": false
+      },
+      "score": 25,
+      "reasons": [
+        {
+          "rule": "business_type",
+          "label": "Тип бизнеса",
+          "max": 25,
+          "points": 25,
+          "note": "Автосервис / СТО"
+        },
+        {
+          "rule": "demand",
+          "label": "Признаки спроса",
+          "max": 20,
+          "points": 0,
+          "note": "Найдено признаков: 0"
+        },
+        {
+          "rule": "site",
+          "label": "Работающий сайт",
+          "max": 15,
+          "points": 0,
+          "note": "Сайт не найден или недоступен"
+        },
+        {
+          "rule": "booking",
+          "label": "Онлайн-запись не обнаружена",
+          "max": 15,
+          "points": 0,
+          "note": "Не проверялось — баллы не начислены"
+        },
+        {
+          "rule": "contact",
+          "label": "Разрешённый контакт",
+          "max": 15,
+          "points": 0,
+          "note": "Контакт не найден"
+        },
+        {
+          "rule": "clean",
+          "label": "Нет дубликата и отказа",
+          "max": 10,
+          "points": 0,
+          "note": "Помечен как дубликат"
+        }
+      ]
+    }
+  ]
+}

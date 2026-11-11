@@ -1,0 +1,617 @@
+[
+  {
+    "name": "колонки отсутствуют",
+    "table": [
+      [
+        "a",
+        "b"
+      ],
+      [
+        "1",
+        "2"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [],
+      "missingColumns": [
+        "название",
+        "город"
+      ]
+    }
+  },
+  {
+    "name": "ИНН, домен+город — exact; название — candidate",
+    "table": [
+      [
+        "название",
+        "город",
+        "сайт",
+        "инн"
+      ],
+      [
+        "Другое",
+        "Москва",
+        "",
+        "7707083893"
+      ],
+      [
+        "Иное",
+        "Казань",
+        "www.sever.example",
+        ""
+      ],
+      [
+        "СТО Север",
+        "г. Казань",
+        "",
+        ""
+      ]
+    ],
+    "existing": [
+      {
+        "name": "СТО «Север»",
+        "city": "Казань",
+        "domain": "sever.example",
+        "inn": "7707083893"
+      }
+    ],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "Другое",
+          "city": "Москва",
+          "category": "Автосервис",
+          "website": null,
+          "inn": "7707083893",
+          "issues": [],
+          "duplicate": {
+            "kind": "exact",
+            "of": "СТО «Север»"
+          }
+        },
+        {
+          "line": 3,
+          "name": "Иное",
+          "city": "Казань",
+          "category": "Автосервис",
+          "website": "sever.example",
+          "inn": null,
+          "issues": [],
+          "duplicate": {
+            "kind": "exact",
+            "of": "СТО «Север»"
+          }
+        },
+        {
+          "line": 4,
+          "name": "СТО Север",
+          "city": "Казань",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": {
+            "kind": "candidate",
+            "of": "СТО «Север»"
+          }
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "филиалы одного домена в разных городах",
+    "table": [
+      [
+        "название",
+        "город",
+        "сайт"
+      ],
+      [
+        "Сеть",
+        "Казань",
+        "net.example"
+      ],
+      [
+        "Сеть",
+        "Уфа",
+        "net.example"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "Сеть",
+          "city": "Казань",
+          "category": "Автосервис",
+          "website": "net.example",
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        },
+        {
+          "line": 3,
+          "name": "Сеть",
+          "city": "Уфа",
+          "category": "Автосервис",
+          "website": "net.example",
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "дубли внутри файла и ошибки строк",
+    "table": [
+      [
+        "название",
+        "город",
+        "сайт",
+        "инн"
+      ],
+      [
+        "А",
+        "Уфа",
+        "a.example",
+        ""
+      ],
+      [
+        "А2",
+        "Уфа",
+        "a.example",
+        ""
+      ],
+      [
+        "",
+        "Уфа",
+        "bad host",
+        "12"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "А",
+          "city": "Уфа",
+          "category": "Автосервис",
+          "website": "a.example",
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        },
+        {
+          "line": 3,
+          "name": "А2",
+          "city": "Уфа",
+          "category": "Автосервис",
+          "website": "a.example",
+          "inn": null,
+          "issues": [],
+          "duplicate": {
+            "kind": "in_file",
+            "of": "А"
+          }
+        },
+        {
+          "line": 4,
+          "name": "",
+          "city": "Уфа",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [
+            "Нет названия",
+            "Некорректный сайт",
+            "Некорректный ИНН"
+          ],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "строка с ошибкой не занимает ключ",
+    "table": [
+      [
+        "название",
+        "город",
+        "сайт"
+      ],
+      [
+        "Х",
+        "Казань",
+        "bad host"
+      ],
+      [
+        "Х",
+        "Казань",
+        ""
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "Х",
+          "city": "Казань",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [
+            "Некорректный сайт"
+          ],
+          "duplicate": null
+        },
+        {
+          "line": 3,
+          "name": "Х",
+          "city": "Казань",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "дубль по ИНН внутри файла",
+    "table": [
+      [
+        "название",
+        "город",
+        "сайт",
+        "инн"
+      ],
+      [
+        "А",
+        "Уфа",
+        "",
+        "7707083893"
+      ],
+      [
+        "Б",
+        "Тверь",
+        "b.example",
+        "770 708 3893"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "А",
+          "city": "Уфа",
+          "category": "Автосервис",
+          "website": null,
+          "inn": "7707083893",
+          "issues": [],
+          "duplicate": null
+        },
+        {
+          "line": 3,
+          "name": "Б",
+          "city": "Тверь",
+          "category": "Автосервис",
+          "website": "b.example",
+          "inn": "7707083893",
+          "issues": [],
+          "duplicate": {
+            "kind": "in_file",
+            "of": "А"
+          }
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "дубль по названию внутри файла, регистр и формы",
+    "table": [
+      [
+        "name",
+        "city"
+      ],
+      [
+        "ООО «Мотор»",
+        "СПб"
+      ],
+      [
+        "мотор",
+        "санкт-петербург"
+      ],
+      [
+        "Мотор",
+        "Москва"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "ООО «Мотор»",
+          "city": "Санкт-Петербург",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        },
+        {
+          "line": 3,
+          "name": "мотор",
+          "city": "Санкт-Петербург",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": {
+            "kind": "in_file",
+            "of": "ООО «Мотор»"
+          }
+        },
+        {
+          "line": 4,
+          "name": "Мотор",
+          "city": "Москва",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "синонимы заголовков, категория по умолчанию",
+    "table": [
+      [
+        "Компания",
+        "Населённый пункт",
+        "Вид деятельности",
+        "URL",
+        "ИНН"
+      ],
+      [
+        "Гараж",
+        "г. Тверь",
+        "",
+        "https://garage.example/x",
+        "7707083893"
+      ],
+      [
+        "Мойка",
+        "Тверь",
+        "Автомойка",
+        "",
+        ""
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "Гараж",
+          "city": "Тверь",
+          "category": "Автосервис",
+          "website": "garage.example",
+          "inn": "7707083893",
+          "issues": [],
+          "duplicate": null
+        },
+        {
+          "line": 3,
+          "name": "Мойка",
+          "city": "Тверь",
+          "category": "Автомойка",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "короткие строки",
+    "table": [
+      [
+        "название",
+        "город",
+        "категория"
+      ],
+      [
+        "Один"
+      ],
+      [
+        "Два",
+        "Орёл"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "Один",
+          "city": "",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [
+            "Нет города"
+          ],
+          "duplicate": null
+        },
+        {
+          "line": 3,
+          "name": "Два",
+          "city": "Орел",
+          "category": "Автосервис",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "только заголовок",
+    "table": [
+      [
+        "название",
+        "город"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "пустая таблица",
+    "table": [],
+    "existing": [],
+    "out": {
+      "rows": [],
+      "missingColumns": [
+        "название",
+        "город"
+      ]
+    }
+  },
+  {
+    "name": "existing: тот же домен в другом городе",
+    "table": [
+      [
+        "название",
+        "город",
+        "сайт"
+      ],
+      [
+        "Иное",
+        "Уфа",
+        "sever.example"
+      ]
+    ],
+    "existing": [
+      {
+        "name": "СТО «Север»",
+        "city": "Казань",
+        "domain": "sever.example",
+        "inn": "7707083893"
+      }
+    ],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "Иное",
+          "city": "Уфа",
+          "category": "Автосервис",
+          "website": "sever.example",
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "existing: exact побеждает candidate",
+    "table": [
+      [
+        "название",
+        "город",
+        "сайт",
+        "инн"
+      ],
+      [
+        "СТО Север",
+        "Казань",
+        "sever.example",
+        ""
+      ]
+    ],
+    "existing": [
+      {
+        "name": "СТО «Север»",
+        "city": "Казань",
+        "domain": "sever.example",
+        "inn": "7707083893"
+      }
+    ],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "СТО Север",
+          "city": "Казань",
+          "category": "Автосервис",
+          "website": "sever.example",
+          "inn": null,
+          "issues": [],
+          "duplicate": {
+            "kind": "exact",
+            "of": "СТО «Север»"
+          }
+        }
+      ],
+      "missingColumns": []
+    }
+  },
+  {
+    "name": "ё в заголовках",
+    "table": [
+      [
+        "Название",
+        "Город",
+        "Категория"
+      ],
+      [
+        "Ёлка",
+        "Ёлки",
+        "Ремонт"
+      ]
+    ],
+    "existing": [],
+    "out": {
+      "rows": [
+        {
+          "line": 2,
+          "name": "Ёлка",
+          "city": "Елки",
+          "category": "Ремонт",
+          "website": null,
+          "inn": null,
+          "issues": [],
+          "duplicate": null
+        }
+      ],
+      "missingColumns": []
+    }
+  }
+]

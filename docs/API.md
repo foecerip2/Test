@@ -22,6 +22,17 @@
 | 403 | `ORIGIN_FORBIDDEN` | Origin/Referer не совпадает с `PUBLIC_ORIGIN` |
 | 404 | `NOT_FOUND` | нет ресурса |
 | 409 | `LAST_OWNER` | блокировка последнего owner |
+| 409 | `STAGE_CONFLICT` | `expected_stage` не совпал с текущей стадией (`current_stage` в ответе) |
+| 409 | `SUPPRESSION_PERMANENT` | стадию `lost` (отказ) нельзя вернуть |
+| 409 | `INVALID_STATE` | недопустимый переход состояния (отклонить архивную компанию) |
+| 409 | `IMPORT_CONFLICT` | данные изменились во время импорта, три попытки не помогли |
+| 413 | `PAYLOAD_TOO_LARGE` | тело импорта больше 2 МБ |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | импорт: не `text/csv` и не JSON |
+| 422 | `INVALID_CURSOR` | курсор повреждён или от другой сортировки |
+| 422 | `EMPTY_FILE` | в CSV нет строк с данными |
+| 422 | `TOO_MANY_ROWS` | больше 5000 строк данных |
+| 422 | `MISSING_COLUMNS` | нет колонок «название»/«город» (`missing_columns`) — только commit |
+| 422 | `INVALID_ENCODING` | файл не UTF-8 и не cp1251 |
 | 410 | `CODE_EXPIRED` | код/challenge истёк или не существует |
 | 410 | `CODE_USED` | код уже использован |
 | 422 | `VALIDATION_ERROR` | неверный формат запроса/email |
@@ -47,6 +58,97 @@
 - `POST /admin/users/{id}/approve` (CSRF) → `status=active`
 - `POST /admin/users/{id}/block` (CSRF) → `status=blocked`, сессии отозваны. Нельзя заблокировать себя и последнего owner.
 
+## Компании (Фаза 2)
+
+Все эндпоинты требуют активного пользователя (`require_active_user`: 401 без сессии/заблокирован, 403 `ACCOUNT_PENDING`). Мутации — ещё CSRF (`X-CSRF-Token`). Пока все активные пользователи видят общую базу компаний (single-tenant). Поля ответов — **snake_case**, как в auth; даты — ISO 8601 UTC (`2026-11-10T12:00:00Z`). Соответствие `apps/web/src/lib/api/types.ts` (camelCase): `source_label`→`sourceLabel`, `updated_at`→`updatedAt`, `has_more`→`hasMore`, `next_cursor` (новое), `score_reasons`→`scoreReasons`, `score_version`→`scoreVersion`, `evidence_url`→`evidenceUrl`, `evidence_excerpt`→`evidenceExcerpt`, `observed_at`→`observedAt`, `draft_id`→`draftId`; остальные имена совпадают. Конвертацию делает клиент.
+
+Объект компании (`Company`):
+
+```json
+{"id": "uuid", "name": "Север Авто", "city": "Казань", "category": "Автосервис",
+ "website": "https://sever.example", "domain": "sever.example", "inn": "7707083893",
+ "state": "discovered", "stage": "new", "score": 35,
+ "display": {"key": "new", "label": "Новый", "tone": "neutral"},
+ "source_label": "Импорт CSV", "created_at": "…", "updated_at": "…",
+ "demo": false, "duplicate_candidate": false}
+```
+
+`state` — машина состояний ТЗ §8 (`discovered|verified|scored|shortlisted|rejected|archived`), `stage` — стадия CRM (`new|contacted|replied|interested|pilot|lost`). `display` вычисляется из `state`+`stage`: `lost`→`refused` («Отказ», red), `rejected`→«Отклонена» (red), `pilot`/`interested`→green, `replied`/`contacted`/`new`→neutral. Ключи `display.key` — значения параметра `status`.
+
+### `GET /companies`
+
+Параметры: `query` (поиск по названию, городу, категории, домену; без учёта регистра и «ё»), `city` (нормализуется: «СПб», «г. Казань» работают), `score_min` (0–100), `status` (`new|contacted|replied|interested|pilot|refused|rejected`), `sort` (`score|name|updated`, по умолчанию `score`), `dir` (`asc|desc`; по умолчанию `desc` для `score`/`updated`, `asc` для `name`), `limit` (1–200, по умолчанию 50), `cursor`.
+
+```json
+{"items": [Company, …], "total": 128, "cities": ["Казань", "Уфа"], "has_more": true, "next_cursor": "eyJz…"}
+```
+
+`total` — число записей по фильтрам (не зависит от курсора); `cities` — все города базы. Пагинация курсорная (keyset): сортировка всегда по `(поле, id)`, поэтому при равных оценках порядок стабилен, страницы не пересекаются и не теряют записи. Курсор привязан к `sort`/`dir`; чужой или повреждённый — `422 INVALID_CURSOR`. Клиент передаёт `next_cursor` как есть и не разбирает его.
+
+### `GET /companies/{id}`
+
+`Company` + поля:
+
+```json
+{"note": "", "facts": [{"id": "…", "text": "…", "kind": "confirmed", "evidence_url": "https://…",
+  "evidence_excerpt": "…", "observed_at": "…", "confidence": 0.9}],
+ "score_reasons": [{"rule": "business_type", "label": "Тип бизнеса", "points": 25, "max": 25, "note": "Автосервис / СТО"}],
+ "score_version": "rules-v1",
+ "history": [{"id": "…", "event_type": "company.imported", "icon": "download", "title": "Импортирована из CSV",
+  "text": "Строка 2", "at": "…", "company_id": "…", "company_name": null}],
+ "contacts": [], "draft_id": null}
+```
+
+Факты отсортированы: сначала `confirmed` (у них всегда есть `evidence_url` и `evidence_excerpt`), затем `hypothesis`; внутри — по `observed_at` убыв. Разбор оценки — шесть правил с весами 25/20/15/15/15/10 (`rules-v1`), `sum(points) == score`. `history` — до 50 последних событий (`activity_events`, в payload нет персональных данных и текстов заметок). `contacts` и `draft_id` — заглушки до следующих шагов.
+
+### `PATCH /companies/{id}` (CSRF)
+
+`{"stage"?: …, "note"?: "≤ 2000 символов", "expected_stage"?: …}`; нужен `stage` или `note`; лишние поля — 422. Ответ — карточка. `expected_stage` — оптимистичная проверка: если текущая стадия иная, `409 STAGE_CONFLICT` с `current_stage`; запись выполняется как compare-and-set (`UPDATE … WHERE stage = <прочитанная>`), так что параллельное изменение не затирается. Повтор той же стадии — без события. Переход из `lost` в другую стадию — `409 SUPPRESSION_PERMANENT`; при переходе в `lost` оценка пересчитывается (правило «чисто» даёт 0) и пишется событие `company.score_recalculated`. Тексты заметок в журналы не попадают (только длина).
+
+### `POST /companies/{id}/reject` (CSRF)
+
+`state → rejected`, ответ — карточка. Повтор идемпотентен (без новых событий); архивную компанию — `409 INVALID_STATE`.
+
+### `GET /companies/export`
+
+Те же `query/city/score_min/status/sort/dir`, без `limit/cursor`. `text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="companies.csv"`, потоковая выдача. Формат как у `toCsv` эталона: BOM, разделитель `;`, `CRLF`, все ячейки в кавычках, значения на `= + - @ TAB CR` получают префикс `'` (защита от CSV-инъекций). Колонки: Компания, Город, Категория, Сайт (домен), Оценка, Статус. Каждая выгрузка пишется в `audit_logs` (`company.export`).
+
+### `POST /imports/companies?dry_run=true|false` (CSRF)
+
+Тело: `text/csv` (UTF-8, при ошибке декодирования — cp1251) **или** `application/json` `{"text": "…"}`. Лимиты: 2 МБ (`413`, проверяется и по `Content-Length`, и при чтении потока; тело неавторизованного не читается) и 5000 строк данных. Разделители `;` `,` TAB, BOM, кавычки RFC 4180. Колонки: `название`/`name`/`компания`…, `город`/`city`, необязательные `категория`, `сайт`/`url`, `инн`. `dry_run` по умолчанию `true`.
+
+Dry-run ничего не пишет (ни компаний, ни `import_jobs`, ни аудита):
+
+```json
+{"dry_run": true, "missing_columns": [],
+ "rows": [{"line": 2, "name": "Север Авто", "city": "Казань", "category": "Автосервис", "website": "sever.example",
+   "inn": null, "issues": [], "duplicate": null}],
+ "summary": {"total": 1, "importable": 1, "with_issues": 0, "exact": 0, "in_file": 0, "candidates": 0}}
+```
+
+`duplicate`: `{"kind": "exact"|"candidate"|"in_file", "of": "название"}`. Порядок дедупликации (ТЗ §6): ИНН → домен+город (точные дубли) → похожее нормализованное название в том же городе (**только кандидат**, не слияние). Филиалы одного домена в разных городах не сливаются. Дубли внутри файла — `in_file`; строки с ошибками не занимают ключ дедупликации. Если нет колонок «название»/«город», dry-run отвечает `200` с `missing_columns` и пустым `rows`.
+
+Commit (`dry_run=false`) не принимает от клиента ни `issues`, ни `duplicate`: сервер заново разбирает файл и сверяет с БД. Добавляются строки без ошибок и без точных дублей; «кандидаты» добавляются с `duplicate_candidate=true` (оценка −10, событие `company.duplicate_candidate`). Оценка только за то, что известно из файла: сайт не проверялся (`site_works=false`), онлайн-запись «не проверялась» (`null`), контактов нет — автосервис получает 35, прочие 10. Уникальность ИНН закреплена индексом БД; при гонке двух импортов commit повторяет планирование.
+
+```json
+{"dry_run": false, "job_id": "uuid", "rows_total": 3, "added": 2, "skipped": 1, "candidates": 0, "summary": {…}}
+```
+
+Файл не хранится: в `import_jobs` только счётчики. Каждый commit пишет `audit_logs` (`import.commit`) и события `company.imported` по каждой компании.
+
+### `GET /dashboard`
+
+Только агрегаты из БД (пустая база — нули):
+
+```json
+{"companies_total": 128, "companies_week": 12, "suitable": 9, "score_threshold": 75,
+ "by_stage": {"new": 100, "contacted": 20, "replied": 4, "interested": 2, "pilot": 1, "lost": 1},
+ "by_state": {"discovered": 120, "verified": 0, "scored": 0, "shortlisted": 0, "rejected": 7, "archived": 1},
+ "top_companies": [Company, …], "recent": [{…событие…, "company_name": "…"}]}
+```
+
+`companies_week` — создано за 7 суток; `suitable` — `score ≥ порога`, без отклонённых и отказов; `top_companies` — до 4 лучших (без отклонённых и отказов); `recent` — 5 последних событий. Порог — `SCORE_THRESHOLD` (по умолчанию 75). Показатели, которых в БД пока нет (черновики, диалоги, задачи), в ответ не включены — UI должен их скрывать, а не рисовать нули.
+
 ## Здоровье (без авторизации, вне префикса)
 
 - `GET /healthz` — liveness; `GET /readyz` — проверка БД.
@@ -66,6 +168,7 @@
 | `COOKIE_SECURE` | `true` в prod | флаг `Secure` |
 | `TRUST_PROXY_HEADERS` | `true` в prod | брать IP клиента из последней записи `X-Forwarded-For` (API должен быть доступен только через reverse proxy) |
 | `OWNER_EMAIL` | пусто | email владельца |
+| `SCORE_THRESHOLD` | `75` | порог оценки «подходит для работы» (0–100) для дашборда |
 | `MAIL_BACKEND` | `console` | `http` (HTTPS-ретранслятор, основной в prod), `smtp` или `console`; `console` запрещён в prod |
 | `MAIL_RELAY_URL` | — | для `http`: адрес ретранслятора, в prod только `https://`, например `https://vaylonet.ru/lh-mail.php` |
 | `MAIL_RELAY_SECRET` | — | для `http`: общий секрет HMAC, ≥ 32 символов; не попадает в repr/логи |
