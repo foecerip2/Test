@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import html
+import http.client
+import json
 import logging
+import secrets
 import smtplib
 import ssl
+import time
 from email.message import EmailMessage
 from email.utils import parseaddr
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from app.config import Settings
 from app.security import mask_email
@@ -24,6 +31,23 @@ class MailError(Exception):
 
 class Mailer(Protocol):
     def send(self, to: str, subject: str, text: str, html_body: str) -> None: ...
+
+    def send_otp(self, to: str, code: str, ttl_minutes: int) -> None: ...
+
+
+def ttl_minutes_for(settings: Settings) -> int:
+    """TTL кода в минутах для письма (1..60)."""
+    return max(1, min(60, settings.otp_ttl_seconds // 60))
+
+
+def deliver_otp(mailer: Mailer, to: str, code: str, ttl_minutes: int) -> None:
+    """Отправить код входа. Совместимо с «старыми» почтовиками, у которых есть только send()."""
+    send_otp = getattr(mailer, "send_otp", None)
+    if send_otp is not None:
+        send_otp(to, code, ttl_minutes)
+        return
+    subject, text, html_body = render_otp_email(code, ttl_minutes)
+    mailer.send(to, subject, text, html_body)
 
 
 def render_otp_email(code: str, ttl_minutes: int = 10) -> tuple[str, str, str]:
@@ -87,6 +111,10 @@ class SmtpMailer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    def send_otp(self, to: str, code: str, ttl_minutes: int) -> None:
+        subject, text, html_body = render_otp_email(code, ttl_minutes)
+        self.send(to, subject, text, html_body)
+
     def send(self, to: str, subject: str, text: str, html_body: str) -> None:
         s = self.settings
         msg = build_message(s, to, subject, text, html_body)
@@ -122,11 +150,99 @@ class ConsoleMailer:
         if settings.env != "dev":
             raise RuntimeError("MAIL_BACKEND=console разрешён только при ENV=dev")
 
+    def send_otp(self, to: str, code: str, ttl_minutes: int) -> None:
+        subject, text, html_body = render_otp_email(code, ttl_minutes)
+        self.send(to, subject, text, html_body)
+
     def send(self, to: str, subject: str, text: str, html_body: str) -> None:
         log.warning("[mail:console] to=%s subject=%s", mask_email(to), subject)
+
+
+RELAY_TIMEOUT = 15
+RELAY_MAX_RESPONSE = 4096
+
+
+def sign_relay_request(secret: str, timestamp: str, nonce: str, body: bytes) -> str:
+    """hex HMAC-SHA256(secret, timestamp + "." + nonce + "." + body) — схема infra/mail-relay."""
+    msg = timestamp.encode() + b"." + nonce.encode() + b"." + body
+    return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
+
+
+class HttpRelayMailer:
+    """Отправка через HTTPS-ретранслятор (PHP на хостинге). Шлёт только {to, code, ttl_minutes}."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._url = settings.mail_relay_url
+        self._secret = settings.mail_relay_secret
+
+    def __repr__(self) -> str:
+        return "HttpRelayMailer(url=<hidden>)"
+
+    def send(self, to: str, subject: str, text: str, html_body: str) -> None:
+        raise MailError("HttpRelayMailer отправляет только коды входа (send_otp)")
+
+    def send_otp(self, to: str, code: str, ttl_minutes: int) -> None:
+        body = json.dumps(
+            {"to": to, "code": code, "ttl_minutes": ttl_minutes},
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode()
+        ts = str(int(time.time()))
+        nonce = secrets.token_urlsafe(24)
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Content-Length": str(len(body)),
+            "X-LH-Timestamp": ts,
+            "X-LH-Nonce": nonce,
+            "X-LH-Signature": sign_relay_request(self._secret, ts, nonce, body),
+        }
+        parts = urlsplit(self._url)
+        path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        conn: http.client.HTTPConnection
+        try:
+            if parts.scheme == "https":
+                conn = http.client.HTTPSConnection(
+                    parts.hostname or "",
+                    parts.port,
+                    timeout=RELAY_TIMEOUT,
+                    context=ssl.create_default_context(),
+                )
+            else:
+                conn = http.client.HTTPConnection(
+                    parts.hostname or "", parts.port, timeout=RELAY_TIMEOUT
+                )
+            try:
+                conn.request("POST", path, body=body, headers=headers)
+                resp = conn.getresponse()
+                status = resp.status  # редиректы не выполняются: 3xx = ошибка
+                raw = resp.read(RELAY_MAX_RESPONSE)
+            finally:
+                conn.close()
+        except (OSError, http.client.HTTPException) as exc:
+            log.error(
+                "Ретранслятор: запрос на %s не удался (%s)", mask_email(to), type(exc).__name__
+            )
+            raise MailError(type(exc).__name__) from exc
+        ok = False
+        reason = f"HTTP {status}"
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                ok = status == 200 and data.get("ok") is True
+                err = data.get("code")
+                if isinstance(err, str) and err.isidentifier():
+                    reason = f"HTTP {status} {err}"
+        except ValueError:
+            reason = f"HTTP {status} (не JSON)"
+        if not ok:
+            log.error("Ретранслятор: отказ для %s (%s)", mask_email(to), reason)
+            raise MailError(reason)
 
 
 def make_mailer(settings: Settings) -> Mailer:
     if settings.mail_backend == "smtp":
         return SmtpMailer(settings)
+    if settings.mail_backend == "http":
+        return HttpRelayMailer(settings)
     return ConsoleMailer(settings)

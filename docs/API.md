@@ -27,7 +27,7 @@
 | 422 | `VALIDATION_ERROR` | неверный формат запроса/email |
 | 429 | `RATE_LIMITED` | лимит запросов (заголовок `Retry-After`) |
 | 429 | `TOO_MANY_ATTEMPTS` | 5 неверных попыток, нужен новый код |
-| 503 | `MAIL_UNAVAILABLE` | SMTP недоступен, код не выдан |
+| 503 | `MAIL_UNAVAILABLE` | почта (SMTP или HTTPS-ретранслятор) недоступна, код не выдан |
 | 503 | `NOT_READY` | `/readyz`: БД недоступна |
 | 500 | `INTERNAL_ERROR` | внутренняя ошибка |
 
@@ -66,9 +66,16 @@
 | `COOKIE_SECURE` | `true` в prod | флаг `Secure` |
 | `TRUST_PROXY_HEADERS` | `true` в prod | брать IP клиента из последней записи `X-Forwarded-For` (API должен быть доступен только через reverse proxy) |
 | `OWNER_EMAIL` | пусто | email владельца |
-| `MAIL_BACKEND` | `console` | `smtp` или `console`; `console` запрещён в prod |
+| `MAIL_BACKEND` | `console` | `http` (HTTPS-ретранслятор, основной в prod), `smtp` или `console`; `console` запрещён в prod |
+| `MAIL_RELAY_URL` | — | для `http`: адрес ретранслятора, в prod только `https://`, например `https://vaylonet.ru/lh-mail.php` |
+| `MAIL_RELAY_SECRET` | — | для `http`: общий секрет HMAC, ≥ 32 символов; не попадает в repr/логи |
 | `SMTP_HOST`, `SMTP_PORT` (465), `SMTP_USER`, `SMTP_PASSWORD` | — | параметры SMTP |
 | `SMTP_FROM` | — | например `LeadHunter <noreply@vaylonet.ru>` |
 | `SMTP_SECURITY` | `ssl` (`starttls` для порта 587) | `ssl`, `starttls`, `none` |
 
-Проверка SMTP: `python -m app.cli send-test-mail you@example.com`.
+Проверка почты (любой backend): `python -m app.cli send-test-mail you@example.com`. Отправляется случайный 6-значный код (для `http` ретранслятор принимает только письма-коды); сам код в вывод не печатается.
+
+### HTTPS-ретранслятор (`MAIL_BACKEND=http`)
+Нужен, когда хостинг VPS закрывает исходящие порты 25/465/587. `HttpRelayMailer` (stdlib `http.client`, таймаут 15 с, проверка TLS, без редиректов) отправляет `POST` `application/json` `{"to","code","ttl_minutes"}` — и только это; тему и текст письма формирует PHP-скрипт `infra/mail-relay/lh-mail.php`.
+
+Заголовки: `X-LH-Timestamp` (unix-секунды, допуск ±300 с), `X-LH-Nonce` (16–64 символа `[A-Za-z0-9_-]`, одноразовый), `X-LH-Signature` = hex HMAC-SHA256(`MAIL_RELAY_SECRET`, `timestamp + "." + nonce + "." + тело`). Любой ответ, кроме `200 {"ok":true}`, — `MailError` и 503 `MAIL_UNAVAILABLE` у клиента API. Совместимость схемы подписи с PHP проверяет `apps/api/tests/test_relay_compat.py` (маркер `integration`, пропускается без `php`).

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import secrets
 import sys
 
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.mail import MailError, make_mailer, render_otp_email
+from app.mail import MailError, deliver_otp, make_mailer, ttl_minutes_for
 
 
 def send_test_mail(to: str) -> int:
@@ -18,9 +19,10 @@ def send_test_mail(to: str) -> int:
         print(f"Ошибка конфигурации: {exc}", file=sys.stderr)
         return 2
     mailer = make_mailer(settings)
-    subject, text, html_body = render_otp_email("123456", settings.otp_ttl_seconds // 60)
+    # Тестовое письмо — это тоже «код входа» (ретранслятор принимает только такие письма).
+    code = f"{secrets.randbelow(10**6):06d}"
     try:
-        mailer.send(to, subject, text, html_body)
+        deliver_otp(mailer, to, code, ttl_minutes_for(settings))
     except MailError as exc:
         cause = exc.__cause__
         print(
@@ -28,7 +30,10 @@ def send_test_mail(to: str) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"Тестовое письмо отправлено (backend={settings.mail_backend}).")
+    if settings.mail_backend == "http":
+        print("Тестовый код отправлен (через HTTPS-ретранслятор). Проверьте ящик и папку «Спам».")
+    else:
+        print(f"Тестовое письмо отправлено (backend={settings.mail_backend}).")
     return 0
 
 

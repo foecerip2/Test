@@ -25,7 +25,7 @@ from app.deps import (
     get_settings,
     require_csrf,
 )
-from app.mail import Mailer, MailError, render_otp_email
+from app.mail import Mailer, MailError, deliver_otp
 from app.models import AuditLog, OtpChallenge, RateLimitEvent, SessionRow, User
 from app.schemas import (
     EmailIn,
@@ -115,9 +115,8 @@ def _audit(
 
 
 def _send_code(mailer: Mailer, email: str, code: str, ttl_seconds: int) -> None:
-    subject, text, html_body = render_otp_email(code, ttl_seconds // 60)
     try:
-        mailer.send(email, subject, text, html_body)
+        deliver_otp(mailer, email, code, max(1, min(60, ttl_seconds // 60)))
     except MailError as exc:
         raise AppError(
             503, "MAIL_UNAVAILABLE", "Не удалось отправить письмо. Попробуйте позже."

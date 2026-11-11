@@ -22,13 +22,16 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool | None = None
     owner_email: str = ""
 
-    mail_backend: Literal["smtp", "console"] = "console"
+    mail_backend: Literal["smtp", "console", "http"] = "console"
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_user: str = ""
-    smtp_password: str = ""
+    smtp_password: str = Field(default="", repr=False)
     smtp_from: str = "LeadHunter <noreply@localhost>"
     smtp_security: Literal["ssl", "starttls", "none"] | None = None
+    # HTTPS-ретранслятор (infra/mail-relay) — для серверов с закрытыми SMTP-портами.
+    mail_relay_url: str = ""
+    mail_relay_secret: str = Field(default="", repr=False)
 
     # Лимиты (менять не нужно; вынесены для тестов).
     otp_ttl_seconds: int = Field(default=600, ge=1)
@@ -47,13 +50,26 @@ class Settings(BaseSettings):
             if len(self.secret_key) < 32 or self.secret_key == DEV_SECRET:
                 raise ValueError("SECRET_KEY обязателен в prod и должен быть не короче 32 символов")
             if self.mail_backend == "console":
-                raise ValueError("MAIL_BACKEND=console запрещён в prod, используйте smtp")
+                raise ValueError("MAIL_BACKEND=console запрещён в prod, используйте http или smtp")
             if self.database_url.startswith("sqlite"):
                 raise ValueError("В prod нужен PostgreSQL в DATABASE_URL")
         if len(self.secret_key) < 16:
             raise ValueError("SECRET_KEY слишком короткий")
         if self.mail_backend == "smtp" and not self.smtp_host:
             raise ValueError("Для MAIL_BACKEND=smtp задайте SMTP_HOST")
+        self.mail_relay_url = self.mail_relay_url.strip()
+        if self.mail_backend == "http":
+            if not self.mail_relay_url:
+                raise ValueError("Для MAIL_BACKEND=http задайте MAIL_RELAY_URL")
+            parts = urlsplit(self.mail_relay_url)
+            if parts.scheme not in ("https", "http") or not parts.hostname:
+                raise ValueError("MAIL_RELAY_URL должен быть адресом https://...")
+            if parts.username or parts.password or parts.fragment:
+                raise ValueError("MAIL_RELAY_URL не должен содержать логин/пароль/фрагмент")
+            if self.env == "prod" and parts.scheme != "https":
+                raise ValueError("В prod MAIL_RELAY_URL должен начинаться с https://")
+            if len(self.mail_relay_secret) < 32:
+                raise ValueError("MAIL_RELAY_SECRET обязателен и должен быть не короче 32 символов")
         return self
 
     @property

@@ -55,6 +55,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["integration: требует внешних программ (php)"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "tests"]

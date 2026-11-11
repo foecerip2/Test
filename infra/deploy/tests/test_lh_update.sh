@@ -228,5 +228,30 @@ dlog_has "smtp-test вызывает app.cli send-test-mail" "exec -T api python
 OUT="$(cfg smtp-test 'x;rm -rf /')"; has "smtp-test: адрес валидируется" "ОШИБКА"
 reset_log; OUT="$(cfg restart)"; dlog_has "restart" "force-recreate api"
 
+section "12. lh-config mail-relay"
+OUT="$(printf 'n\n' | cfg mail-relay 'http://vaylonet.ru/x.php')"; has "mail-relay: http:// отклонён" "ОШИБКА"
+OUT="$(cfg mail-relay 'https://evil.ru/x y')"; has "mail-relay: пробел в URL отклонён" "ОШИБКА"
+OUT="$(cfg mail-relay 'https://user:pw@vaylonet.ru/x.php')"; has "mail-relay: логин в URL отклонён" "ОШИБКА"
+eq "MAIL_RELAY_SECRET не создан при ошибке" "$(genv MAIL_RELAY_SECRET)" ""
+reset_log; OUT="$(printf '\ny\n' | cfg mail-relay)"; printf '%s\n' "$OUT" | sed -E 's/[0-9a-f]{64}/<СЕКРЕТ>/' | sed 's/^/    | /'
+eq "MAIL_BACKEND=http" "$(genv MAIL_BACKEND)" "http"
+eq "URL по умолчанию" "$(genv MAIL_RELAY_URL)" "https://vaylonet.ru/lh-mail.php"
+RS="$(genv MAIL_RELAY_SECRET)"; eq "секрет 64 hex" "$(printf '%s' "$RS" | grep -cE '^[0-9a-f]{64}$')" 1
+has "секрет показан владельцу" "$RS"
+has "инструкция про setup.sh" "setup.sh"
+eq "права .env 0600" "$(stat -c %a "$APP/.env")" 600
+dlog_has "api пересоздан" "force-recreate api"
+OUT="$(cfg show)"; printf '%s\n' "$OUT" | sed 's/^/    | /'
+has "show: MAIL_RELAY_URL виден" "https://vaylonet.ru/lh-mail.php"
+has "show: секрет замаскирован" "MAIL_RELAY_SECRET ***задан***"; hasnt "show: секрет не виден" "$RS"
+OUT="$(printf 'n\nn\n' | cfg mail-relay https://relay.example.org/m.php)"
+eq "секрет не перегенерирован без согласия" "$(genv MAIL_RELAY_SECRET)" "$RS"
+eq "URL обновлён" "$(genv MAIL_RELAY_URL)" "https://relay.example.org/m.php"
+hasnt "старый секрет повторно не показан" "$RS"
+OUT="$(printf '\ny\nn\n' | cfg mail-relay)"
+[ "$(genv MAIL_RELAY_SECRET)" != "$RS" ] && ok "секрет перегенерирован по запросу" || bad "секрет не изменился"
+reset_log; OUT="$(cfg smtp-test t@example.com)"
+dlog_has "smtp-test работает и в режиме http" "exec -T api python -m app.cli send-test-mail t@example.com"
+
 printf '\nИтог: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

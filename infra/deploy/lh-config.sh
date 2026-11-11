@@ -3,7 +3,8 @@
 # Ставится как /usr/local/sbin/lh-config (установщик; затем обновляется службой lh-update). Запускать от root.
 #
 #   lh-config smtp                    — интерактивно: SMTP-сервер, порт, шифрование, логин, пароль (скрытый ввод), «от кого»
-#   lh-config smtp-test you@mail.ru   — отправить тестовое письмо через api
+#   lh-config mail-relay [URL]        — почта через HTTPS-ретранслятор на хостинге Рег.ру: генерирует секрет (показывается один раз)
+#   lh-config smtp-test you@mail.ru   — отправить тестовый код входа через api (работает для smtp и http)
 #   lh-config owner you@mail.ru       — e-mail владельца (его регистрация одобряется автоматически)
 #   lh-config show                    — текущие настройки (секреты замаскированы)
 #   lh-config restart                 — пересоздать контейнер api (применить .env)
@@ -49,6 +50,9 @@ valid_from()  {
   valid_email "$1" && return 0
   [ "${#1}" -le 200 ] || return 1
   [[ "$1" =~ ^[^[:cntrl:]\<\>\"\'\\\$#]+\ \<[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\>$ ]]
+}
+valid_url() {   # https://host[:port][/path], без логина/пробелов/кавычек
+  [ "${#1}" -le 300 ] && [[ "$1" =~ ^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~/%+-]*)?$ ]]
 }
 valid_secret() {   # пароль: без управляющих символов, без пробелов по краям, без « #», не начинается с кавычки
   [ "${#1}" -ge 1 ] && [ "${#1}" -le 200 ] || return 1
@@ -108,10 +112,53 @@ cmd_smtp() {
   if [ -n "$REPLY" ]; then cmd_smtp_test "$REPLY"; else say "Позже: lh-config smtp-test you@example.com"; fi
 }
 
+cmd_mail_relay() {
+  local url="${1:-}" cur def secret regen=y
+  def="$(get_kv MAIL_RELAY_URL)"; [ -n "$def" ] || def="https://vaylonet.ru/lh-mail.php"
+  if [ -z "$url" ]; then
+    while :; do ask "Адрес ретранслятора" "$def" || die "Ввод прерван"; url="$REPLY"
+      valid_url "$url" && break; say "Нужен адрес вида https://vaylonet.ru/lh-mail.php"
+    done
+  else
+    valid_url "$url" || die "Некорректный адрес. Пример: lh-config mail-relay https://vaylonet.ru/lh-mail.php"
+  fi
+  cur="$(get_kv MAIL_RELAY_SECRET)"
+  if [ -n "$cur" ]; then
+    ask "Секрет уже задан. Сгенерировать новый (его придётся ввести в setup.sh заново)? y/n" "n" || true
+    regen="${REPLY:-n}"
+  fi
+  lock
+  case "$regen" in
+    y|Y) secret="$(rand_hex 32)"; [ "${#secret}" -eq 64 ] || die "Не удалось сгенерировать секрет"
+         set_kv MAIL_RELAY_SECRET "$secret" ;;
+    *) secret="" ;;
+  esac
+  set_kv MAIL_RELAY_URL "$url"; set_kv MAIL_BACKEND http
+  chmod 0600 "$ENVF"
+  say "Сохранено в $ENVF (права 0600): MAIL_BACKEND=http, MAIL_RELAY_URL=$url"
+  if [ -n "$secret" ]; then
+    say
+    say "============================================================"
+    say "  СЕКРЕТ РЕТРАНСЛЯТОРА (показан ОДИН раз):"
+    say
+    say "  $secret"
+    say
+    say "  Скопируйте его и вставьте в Shell хостинга Рег.ру, когда"
+    say "  setup.sh спросит «Секрет ретранслятора»."
+    say "============================================================"
+    say
+  else
+    say "Прежний секрет сохранён (не показывается)."
+  fi
+  ask "Применить сейчас (пересоздать api)? y/n" "y" || true
+  if [ "$REPLY" = y ] || [ "$REPLY" = Y ]; then restart_api; fi
+  say "Дальше: setup.sh на хостинге (см. docs/OPERATIONS.md), затем: lh-config smtp-test you@example.com"
+}
+
 cmd_smtp_test() {
   local to="${1:-}"
   valid_email "$to" || die "Укажите корректный адрес: lh-config smtp-test you@example.com"
-  say "Отправка тестового письма на $to ..."
+  say "Отправка тестового кода на $to ..."
   if compose exec -T api python -m app.cli send-test-mail "$to"; then
     say "Команда выполнена. Проверьте ящик (и папку «Спам»)."
   else
@@ -131,15 +178,17 @@ mask() { if [ -n "$1" ]; then printf '***задан***'; else printf '(не за
 
 cmd_show() {
   local k db gate
-  for k in DOMAIN PUBLIC_ORIGIN COOKIE_SECURE OWNER_EMAIL MAIL_BACKEND SMTP_HOST SMTP_PORT SMTP_SECURITY SMTP_USER SMTP_FROM; do
+  for k in DOMAIN PUBLIC_ORIGIN COOKIE_SECURE OWNER_EMAIL MAIL_BACKEND SMTP_HOST SMTP_PORT SMTP_SECURITY SMTP_USER SMTP_FROM MAIL_RELAY_URL; do
     printf '%-16s %s\n' "$k" "$(get_kv "$k")"
   done
-  for k in SMTP_PASSWORD SECRET_KEY POSTGRES_PASSWORD; do printf '%-16s %s\n' "$k" "$(mask "$(get_kv "$k")")"; done
+  for k in MAIL_RELAY_SECRET SMTP_PASSWORD SECRET_KEY POSTGRES_PASSWORD; do printf '%-16s %s\n' "$k" "$(mask "$(get_kv "$k")")"; done
   db="$(get_kv DATABASE_URL)"; printf '%-16s %s\n' DATABASE_URL "$(sed -E 's|(://[^:/@]+):[^@]*@|\1:***@|' <<<"$db")"
   if [ -n "$(get_kv BASIC_HASH)" ]; then gate="включён (логин $(get_kv BASIC_USER))"; else gate="выключен"; fi
   printf '%-16s %s\n' "Шлюз (basic)" "$gate"
   for k in COMPOSE_PROFILES WEB_IMAGE API_IMAGE; do printf '%-16s %s\n' "$k" "$(get_kv "$k")"; done
-  if [ -z "$(get_kv SMTP_HOST)" ]; then say; say "Почта не настроена: регистрация отвечает 503 MAIL_UNAVAILABLE. Выполните: lh-config smtp"; fi
+  if [ "$(get_kv MAIL_BACKEND)" = http ]; then
+    [ -n "$(get_kv MAIL_RELAY_SECRET)" ] && [ -n "$(get_kv MAIL_RELAY_URL)" ] || { say; say "Ретранслятор не настроен. Выполните: lh-config mail-relay"; }
+  elif [ -z "$(get_kv SMTP_HOST)" ]; then say; say "Почта не настроена: регистрация отвечает 503 MAIL_UNAVAILABLE. Выполните: lh-config mail-relay (или lh-config smtp)"; fi
 }
 
 cmd_gate() {
@@ -184,7 +233,7 @@ cmd_init() {
   # console-почта в prod запрещена: пока SMTP не задан, api отвечает 503 MAIL_UNAVAILABLE
   if [ -z "$(get_kv MAIL_BACKEND)" ] || [ "$(get_kv MAIL_BACKEND)" = console ]; then set_kv MAIL_BACKEND smtp; fi
   fill SMTP_SECURITY ssl
-  for k in OWNER_EMAIL SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD SMTP_FROM BASIC_HASH WEB_IMAGE API_IMAGE; do
+  for k in OWNER_EMAIL MAIL_RELAY_URL MAIL_RELAY_SECRET SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD SMTP_FROM BASIC_HASH WEB_IMAGE API_IMAGE; do
     grep -qE "^$k=" "$ENVF" || set_kv "$k" ""
   done
   fill BASIC_USER owner
@@ -194,11 +243,12 @@ cmd_init() {
 
 case "${1:-}" in
   smtp) cmd_smtp ;;
+  mail-relay) shift; cmd_mail_relay "${1:-}" ;;
   smtp-test) shift; cmd_smtp_test "${1:-}" ;;
   owner) shift; cmd_owner "${1:-}" ;;
   show) cmd_show ;;
   restart) restart_api ;;
   gate) shift; cmd_gate "${1:-}" ;;
   init) shift; cmd_init "$@" ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
