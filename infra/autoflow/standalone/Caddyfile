@@ -1,0 +1,24 @@
+# AutoFlow на отдельном сервере. Переменные приходят из .env через docker-compose.yml.
+{$AUTOFLOW_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy {$AUTOFLOW_API_UPSTREAM} {
+			header_up Host {upstream_hostport}
+		}
+	}
+
+	handle {
+		reverse_proxy autoflow-web:3000
+	}
+}

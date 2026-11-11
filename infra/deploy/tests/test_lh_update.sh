@@ -29,6 +29,7 @@ case "$1" in
     find "$dir" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
     cp -a "$LH_TEST_FIXTURE/." "$dir/"
     if [ -f "$LH_TEST_CTL/api_present" ]; then mkdir -p "$dir/apps/api"; echo "FROM scratch" > "$dir/apps/api/Dockerfile"; fi
+    if [ -f "$LH_TEST_CTL/af_present" ]; then mkdir -p "$dir/apps/autoflow-web"; echo "FROM scratch" > "$dir/apps/autoflow-web/Dockerfile"; fi
     echo "$sha" > "$dir/.git/SHA" ;;
   rev-parse) cat "$dir/.git/SHA" ;;
   *) echo "git shim: неизвестная команда $*" >&2; exit 1 ;;
@@ -44,7 +45,7 @@ img_file() { echo "$D/images/${1//[:\/]/__}"; }
 case "$1" in
   build)
     tag=""; file=""; while [ $# -gt 0 ]; do case "$1" in -t) tag="$2"; shift 2 ;; -f) file="$2"; shift 2 ;; *) shift ;; esac; done
-    svc=web; case "$file" in */apps/api/Dockerfile) svc=api ;; esac
+    svc=web; case "$file" in */apps/api/Dockerfile) svc=api ;; */apps/autoflow-web/Dockerfile) svc=autoflow ;; esac
     if [ -f "$CTL/fail_build_$svc" ]; then echo "ERROR: build $svc failed (подстановка)" >&2; exit 1; fi
     n=$(( $(cat "$D/seq" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$D/seq"; echo "$n" > "$(img_file "$tag")"
     echo "built $tag from $file" ;;
@@ -58,15 +59,21 @@ case "$1" in
   inspect)
     cid="${@: -1}"; img=""
     [ "$cid" = web ] && img="$(cat "$D/running_web" 2>/dev/null)"; [ "$cid" = api ] && img="$(cat "$D/running_api" 2>/dev/null)"
+    [ "$cid" = autoflow-web ] && img="$(cat "$D/running_autoflow" 2>/dev/null)"
     if grep -qxF "$img" "$CTL/bad_images" 2>/dev/null; then echo unhealthy; else echo healthy; fi ;;
   compose)
     shift; envf=""; while [ $# -gt 0 ]; do case "$1" in --env-file) envf="$2"; shift 2 ;; -f) shift 2 ;; *) break ;; esac; done
     sub="$1"; shift
     genv() { grep -E "^$1=" "$envf" | head -1 | cut -d= -f2-; }
     case "$sub" in
-      up) genv WEB_IMAGE > "$D/running_web"; if [ "$(genv COMPOSE_PROFILES)" = api ]; then genv API_IMAGE > "$D/running_api"; else rm -f "$D/running_api"; fi
-          echo "UP web=$(cat "$D/running_web") api=$(cat "$D/running_api" 2>/dev/null) args: $*" ;;
-      ps) [ "$2" = web ] && [ -s "$D/running_web" ] && echo web; [ "$2" = api ] && [ -s "$D/running_api" ] && echo api; true ;;
+      up) case " $* " in *" caddy "*) echo "UP caddy args: $*"; exit 0 ;; esac   # точечное пересоздание caddy не меняет web/api/autoflow
+          genv WEB_IMAGE > "$D/running_web"
+          case ",$(genv COMPOSE_PROFILES)," in *,api,*) genv API_IMAGE > "$D/running_api" ;; *) rm -f "$D/running_api" ;; esac
+          case ",$(genv COMPOSE_PROFILES)," in *,autoflow,*) genv AUTOFLOW_IMAGE > "$D/running_autoflow" ;; *) rm -f "$D/running_autoflow" ;; esac
+          echo "UP web=$(cat "$D/running_web") api=$(cat "$D/running_api" 2>/dev/null) autoflow=$(cat "$D/running_autoflow" 2>/dev/null) args: $*" ;;
+      ps) [ "$2" = web ] && [ -s "$D/running_web" ] && echo web; [ "$2" = api ] && [ -s "$D/running_api" ] && echo api
+          [ "$2" = autoflow-web ] && [ -s "$D/running_autoflow" ] && echo autoflow-web; true ;;
+      stop|rm) echo "compose $sub $*"; [ "${*: -1}" = autoflow-web ] && [ "$sub" = stop ] && rm -f "$D/running_autoflow"; true ;;
       restart|exec) echo "compose $sub $*" ;;
     esac ;;
   run) if [ "${LH_CADDY_INVALID:-0}" = 1 ] && printf '%s ' "$@" | grep -q 'caddy validate'; then exit 1; fi
@@ -263,6 +270,101 @@ eq "образов не собиралось" "$(builds)" "0"
 eq "WEB_IMAGE не менялся" "$(genv WEB_IMAGE)" "$before_web"
 eq "gate.caddy не тронут" "$(cat "$APP/caddy/gate.caddy" 2>/dev/null || true)" "$before_gate"
 if grep -q ' up ' "$D/docker.log"; then bad "compose up не должен вызываться"; else ok "compose up не вызывался"; fi
+
+# ── AutoFlow: третий образ, только когда включён ───────────────────────────────
+afenv() { genv "$1"; }
+S9="$(mksha 9)"; S10="$(mksha 10)"; S11="$(mksha 11)"; S12="$(mksha 12)"; S13="$(mksha 13)"
+gdomain_img() { cat "$D/running_autoflow" 2>/dev/null || true; }
+
+section "14. AutoFlow выключен (AUTOFLOW_DOMAIN пуст): поведение прежнее, третий образ не собирается"
+touch "$CTL/af_present"; reset_log; set_head "$S9" success; run_update
+eq "собрано 2 образа (web, api)" "$(builds)" 2
+eq "AUTOFLOW_IMAGE не задан" "$(genv AUTOFLOW_IMAGE)" ""
+eq "COMPOSE_PROFILES = api" "$(genv COMPOSE_PROFILES)" "api"
+eq "autoflow.caddy = off" "$(cat "$APP/caddy/autoflow.caddy")" "$(cat "$APP/caddy/autoflow.off.caddy")"
+eq "контейнер autoflow не запущен" "$(gdomain_img)" ""
+eq ".last_good_af нет" "$(rf .last_good_af)" ""
+eq "WEB_IMAGE (новый коммит)" "$(genv WEB_IMAGE)" "lh-web:${S9:0:12}"
+
+section "15. lh-config autoflow: валидация и запись"
+OUT="$(cfg autoflow 'bad domain')"; has "домен с пробелом отклонён" "ОШИБКА"
+OUT="$(cfg autoflow 'nodot')"; has "домен без точки отклонён" "ОШИБКА"
+OUT="$(cfg autoflow 'a.b;rm -rf /')"; has "домен с мусором отклонён" "ОШИБКА"
+OUT="$(cfg autoflow 'example.test')"; has "совпадение с основным DOMAIN отклонено" "отдельном домене"
+OUT="$(cfg autoflow)"; has "без аргумента: справка" "Использование"
+eq "AUTOFLOW_DOMAIN не записан при ошибках" "$(genv AUTOFLOW_DOMAIN)" ""
+OUT="$(cfg autoflow Autoflow.Example.Test)"; printf '%s\n' "$OUT" | sed 's/^/    | /'
+eq "AUTOFLOW_DOMAIN в нижнем регистре" "$(genv AUTOFLOW_DOMAIN)" "autoflow.example.test"
+eq "COMPOSE_PROFILES = api,autoflow" "$(genv COMPOSE_PROFILES)" "api,autoflow"
+has "подсказка про DNS" "A-запись"
+eq "права .env 0600" "$(stat -c %a "$APP/.env")" 600
+OUT="$(cfg autoflow autoflow.example.test)"; eq "повтор идемпотентен" "$(genv COMPOSE_PROFILES)" "api,autoflow"
+OUT="$(cfg show)"; has "show: AUTOFLOW_DOMAIN" "autoflow.example.test"
+eq "api по-прежнему считается включённым (restart)" "$(reset_log; cfg restart >/dev/null; grep -c 'force-recreate api' "$D/docker.log")" 1
+
+section "16. Дособирающий проход на уже развёрнутом коммите: web+api+autoflow, прежняя «предыдущая» версия не затёрта"
+prev_before="$(rf .prev_good)"
+reset_log; run_update
+eq "собрано 3 образа" "$(builds)" 3
+eq "AUTOFLOW_IMAGE" "$(genv AUTOFLOW_IMAGE)" "lh-autoflow:${S9:0:12}"
+eq "autoflow запущен" "$(gdomain_img)" "lh-autoflow:${S9:0:12}"
+eq ".last_good_af" "$(rf .last_good_af)" "lh-autoflow:${S9:0:12}"
+eq "autoflow.caddy = on" "$(cat "$APP/caddy/autoflow.caddy")" "$(cat "$APP/caddy/autoflow.on.caddy")"
+eq ".prev_good не затёрт" "$(rf .prev_good)" "$prev_before"
+dlog_has "контекст сборки autoflow" "/apps/autoflow-web/Dockerfile $APP/src"
+dlog_has "build-arg адреса сайта" "NEXT_PUBLIC_SITE_URL=https://autoflow.example.test"
+dlog_has "проверка Caddy получает AUTOFLOW_DOMAIN" "AUTOFLOW_DOMAIN=autoflow.example.test"
+dlog_has "caddy перезапущен (подключён сайт AutoFlow)" "restart caddy"
+reset_log; run_update; eq "повторный запуск ничего не собирает" "$(builds)" 0
+
+section "17. Новый коммит: autoflow нездоров -> откат всех трёх образов"
+reset_log; echo "lh-autoflow:${S10:0:12}" > "$CTL/bad_images"; set_head "$S10" success; run_update
+has "лог провала" "Проверка здоровья не пройдена"
+eq "WEB_IMAGE откатан" "$(genv WEB_IMAGE)" "lh-web:${S9:0:12}"
+eq "API_IMAGE откатан" "$(genv API_IMAGE)" "lh-api:${S9:0:12}"
+eq "AUTOFLOW_IMAGE откатан" "$(genv AUTOFLOW_IMAGE)" "lh-autoflow:${S9:0:12}"
+eq ".failed_sha" "$(rf .failed_sha)" "$S10"
+eq ".last_good_af не тронут" "$(rf .last_good_af)" "lh-autoflow:${S9:0:12}"
+: > "$CTL/bad_images"
+
+section "18. Сбой сборки autoflow: ничего не переключается"
+touch "$CTL/fail_build_autoflow"; set_head "$S11" success; run_update
+has "сообщение" "Сборка autoflow не удалась"; eq ".failed_sha" "$(rf .failed_sha)" "$S11"
+eq "WEB_IMAGE не менялся" "$(genv WEB_IMAGE)" "lh-web:${S9:0:12}"
+eq "AUTOFLOW_IMAGE не менялся" "$(genv AUTOFLOW_IMAGE)" "lh-autoflow:${S9:0:12}"
+rm -f "$CTL/fail_build_autoflow"
+
+section "19. Успешный выкат с AutoFlow и ручной откат на предыдущие три образа"
+set_head "$S12" success; run_update
+eq "WEB_IMAGE" "$(genv WEB_IMAGE)" "lh-web:${S12:0:12}"
+eq "AUTOFLOW_IMAGE" "$(genv AUTOFLOW_IMAGE)" "lh-autoflow:${S12:0:12}"
+eq ".prev_good_af" "$(rf .prev_good_af)" "lh-autoflow:${S9:0:12}"
+run_update --rollback
+has "ручной откат" "Откат выполнен"
+eq "WEB_IMAGE после отката" "$(genv WEB_IMAGE)" "lh-web:${S9:0:12}"
+eq "API_IMAGE после отката" "$(genv API_IMAGE)" "lh-api:${S9:0:12}"
+eq "AUTOFLOW_IMAGE после отката" "$(genv AUTOFLOW_IMAGE)" "lh-autoflow:${S9:0:12}"
+eq "autoflow после отката запущен на прежнем образе" "$(gdomain_img)" "lh-autoflow:${S9:0:12}"
+eq ".failed_sha = откатанный" "$(rf .failed_sha)" "$S12"
+
+section "20. lh-config autoflow off: контейнер остановлен, Caddy без сайта AutoFlow, LeadHunter не затронут"
+reset_log; OUT="$(cfg autoflow off)"; printf '%s\n' "$OUT" | sed 's/^/    | /'
+eq "AUTOFLOW_DOMAIN пуст" "$(genv AUTOFLOW_DOMAIN)" ""
+eq "COMPOSE_PROFILES = api" "$(genv COMPOSE_PROFILES)" "api"
+eq "autoflow.caddy = off" "$(cat "$APP/caddy/autoflow.caddy")" "$(cat "$APP/caddy/autoflow.off.caddy")"
+dlog_has "autoflow остановлен" "stop autoflow-web"
+dlog_has "caddy пересоздан" "force-recreate caddy"
+eq "контейнер autoflow не работает" "$(gdomain_img)" ""
+OUT="$(cfg show)"; has "show: AutoFlow выключен" "(выключен)"
+
+section "21. Домен задан, но в коммите нет apps/autoflow-web/Dockerfile: AutoFlow пропускается, остальное работает"
+OUT="$(cfg autoflow autoflow.example.test)"; rm -f "$CTL/af_present"
+reset_log; set_head "$S13" success; run_update
+has "сообщение о пропуске" "AutoFlow пропущен"
+eq "собрано 2 образа" "$(builds)" 2
+eq "COMPOSE_PROFILES = api" "$(genv COMPOSE_PROFILES)" "api"
+eq "autoflow.caddy = off" "$(cat "$APP/caddy/autoflow.caddy")" "$(cat "$APP/caddy/autoflow.off.caddy")"
+eq "WEB_IMAGE" "$(genv WEB_IMAGE)" "lh-web:${S13:0:12}"
 
 printf '\nИтог: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

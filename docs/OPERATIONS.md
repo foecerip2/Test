@@ -40,6 +40,7 @@ journalctl -u lh-update -n 50     # что делала служба обнов�
 systemctl list-timers lh-update.timer
 lh-config show                    # настройки (секреты замаскированы)
 lh-config gate on|off             # необязательный пароль-шлюз basic-auth перед сайтом
+lh-config autoflow DOMAIN|off     # AutoFlow на отдельном домене (см. docs/AUTOFLOW_DEPLOY.md)
 docker compose --env-file /opt/leadhunter/.env -f /opt/leadhunter/docker-compose.prod.yml ps
 ```
 

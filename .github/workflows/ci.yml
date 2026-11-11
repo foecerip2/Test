@@ -37,8 +37,15 @@ jobs:
       - name: Playwright (Chromium)
         run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm e2e
-      - name: Проверка сборки Docker-образа
-        run: docker build -t lh-web:ci -f apps/web/Dockerfile .
+      # AutoFlow (лендинг): тот же job, чтобы не платить за второй checkout/install/Playwright; браузер уже установлен выше
+      - name: AutoFlow — lint, typecheck, vitest
+        run: pnpm --filter autoflow-web lint && pnpm --filter autoflow-web typecheck && pnpm --filter autoflow-web test
+      - name: AutoFlow — сборка и e2e
+        run: pnpm --filter autoflow-web build && pnpm --filter autoflow-web e2e
+      - name: Проверка сборки Docker-образов (web, AutoFlow)
+        run: |
+          docker build -t lh-web:ci -f apps/web/Dockerfile .
+          docker build -t lh-autoflow:ci -f apps/autoflow-web/Dockerfile .
       - name: Аудит зависимостей (прод)
         run: pnpm audit --prod --audit-level high
         continue-on-error: true
@@ -47,7 +54,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: apps/web/test-results
+          path: |
+            apps/web/test-results
+            apps/autoflow-web/test-results
           retention-days: 5
 
   api:
