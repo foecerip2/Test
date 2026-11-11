@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     otp_resend_seconds: int = Field(default=60, ge=1)
     session_ttl_days: int = Field(default=30, ge=1)
 
+    # Порог оценки «подходит для работы» (ТЗ §9, решение №14 плана): по умолчанию 75.
+    score_threshold: int = Field(default=75, ge=0, le=100)
+
     @model_validator(mode="after")
     def _validate(self) -> Self:
         self.owner_email = self.owner_email.strip().lower()
