@@ -11,14 +11,18 @@ from app.db import get_db
 from app.deps import get_settings, require_active_user
 from app.models import User
 from app.services import companies as svc
+from app.services import pilot as pilot_svc
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
 
 @router.get("/dashboard", response_model=DashboardOut)
 def get_dashboard(
-    _user: User = Depends(require_active_user),
+    user: User = Depends(require_active_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> DashboardOut:
-    return svc.dashboard(db, settings.score_threshold)
+    out = svc.dashboard(db, settings.score_threshold)
+    if user.role == "owner":
+        out.pilot_requests_new = pilot_svc.count_new(db)
+    return out

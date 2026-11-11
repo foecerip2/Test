@@ -368,3 +368,46 @@ class Campaign(Base):
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
     )
+
+
+PILOT_STATUSES = ("new", "contacted", "accepted", "declined", "spam")
+
+
+class PilotRequest(Base):
+    """Заявка на пилот AutoFlow с публичной формы. phone/email — персональные данные:
+    хранятся только здесь, в логи и журнал аудита не попадают (в аудите — признаки наличия)."""
+
+    __tablename__ = "pilot_requests"
+    __table_args__ = (
+        sa.CheckConstraint(_in("status", PILOT_STATUSES), name="ck_pilot_requests_status"),
+        sa.CheckConstraint(
+            "phone IS NOT NULL OR email IS NOT NULL", name="ck_pilot_requests_contact"
+        ),
+        sa.Index("ix_pilot_requests_created_at", "created_at"),
+        sa.Index("ix_pilot_requests_status_created_at", "status", "created_at"),
+        sa.Index("ix_pilot_requests_phone", "phone"),
+        sa.Index("ix_pilot_requests_email", "email"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    business_name: Mapped[str] = mapped_column(sa.String(120), nullable=False)
+    city: Mapped[str] = mapped_column(sa.String(80), nullable=False)
+    contact_name: Mapped[str] = mapped_column(sa.String(80), nullable=False)
+    phone: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+    email: Mapped[str | None] = mapped_column(sa.String(254), nullable=True)
+    status: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, default="new", server_default="new"
+    )
+    note: Mapped[str] = mapped_column(
+        sa.String(2000), nullable=False, default="", server_default=""
+    )
+    consent_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    consent_text_version: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    ip_hash: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    user_agent_short: Mapped[str | None] = mapped_column(sa.String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime, nullable=False, default=_now, server_default=sa.func.now()
+    )

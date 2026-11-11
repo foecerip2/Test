@@ -27,8 +27,9 @@ NEW_TABLES = {
     "activity_events",
     "jobs",
     "campaigns",
+    "pilot_requests",
 }
-COMPANY_TABLES = NEW_TABLES - {"jobs", "campaigns"}
+COMPANY_TABLES = NEW_TABLES - {"jobs", "campaigns", "pilot_requests"}
 OLD_TABLES = {"users", "otp_challenges", "sessions", "audit_logs", "rate_limits"}
 
 
@@ -64,7 +65,7 @@ def _version(url: str) -> str | None:
 def test_upgrade_creates_all_tables(db_url: str) -> None:
     command.upgrade(_config(db_url), "head")
     assert _tables(db_url) == OLD_TABLES | NEW_TABLES
-    assert _version(db_url) == "0003"
+    assert _version(db_url) == "0004"
 
 
 def test_downgrade_to_0001_removes_only_new_tables(db_url: str) -> None:
@@ -151,3 +152,95 @@ def test_offline_sql_for_postgresql_renders(capsys: pytest.CaptureFixture[str]) 
     assert "reasons JSONB NOT NULL" in out and "payload_redacted JSONB" in out
     assert "UUID" in out and "TIMESTAMP WITH TIME ZONE" in out
     assert "CONSTRAINT ck_companies_stage CHECK" in out
+
+
+# ---------------------------------------------------------------- 0004: pilot_requests
+
+
+def _pilot_row(**over: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": uuid.uuid4().hex,
+        "business_name": "Север Авто",
+        "city": "Казань",
+        "contact_name": "Иван",
+        "phone": "+79001234567",
+        "email": None,
+        "status": "new",
+        "consent_at": "2026-11-10 12:00:00",
+        "consent_text_version": "v1",
+    }
+    row.update(over)
+    return row
+
+
+_PILOT_INSERT = sa.text(
+    "INSERT INTO pilot_requests (id, business_name, city, contact_name, phone, email, status,"
+    " consent_at, consent_text_version) VALUES (:id, :business_name, :city, :contact_name,"
+    " :phone, :email, :status, :consent_at, :consent_text_version)"
+)
+
+
+def test_0004_is_additive_and_downgrade_keeps_older_data(db_url: str) -> None:
+    cfg = _config(db_url)
+    command.upgrade(cfg, "0003")
+    engine = sa.create_engine(db_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO users (id, email, role, status)"
+                    " VALUES ('u1', 'a@b.ru', 'user', 'active')"
+                )
+            )
+        assert "pilot_requests" not in _tables(db_url)
+        command.upgrade(cfg, "head")
+        assert _version(db_url) == "0004" and "pilot_requests" in _tables(db_url)
+        with engine.begin() as conn:
+            conn.execute(_PILOT_INSERT, _pilot_row())
+        command.downgrade(cfg, "0003")
+        assert _version(db_url) == "0003" and "pilot_requests" not in _tables(db_url)
+        with engine.connect() as conn:
+            assert conn.execute(sa.text("SELECT email FROM users")).scalar() == "a@b.ru"
+        command.upgrade(cfg, "head")  # повторный подъём после отката
+        with engine.connect() as conn:
+            assert conn.execute(sa.text("SELECT count(*) FROM pilot_requests")).scalar() == 0
+    finally:
+        engine.dispose()
+
+
+def test_0004_constraints_and_defaults(db_url: str) -> None:
+    command.upgrade(_config(db_url), "head")
+    engine = sa.create_engine(db_url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(_PILOT_INSERT, _pilot_row())
+            conn.execute(_PILOT_INSERT, _pilot_row(phone=None, email="a@example.com"))
+        with engine.connect() as conn:
+            row = conn.execute(
+                sa.text("SELECT status, note, created_at FROM pilot_requests")
+            ).first()
+        assert row is not None and row[0] == "new" and row[1] == "" and row[2] is not None
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(_PILOT_INSERT, _pilot_row(status="bogus"))
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(_PILOT_INSERT, _pilot_row(phone=None, email=None))
+        idx = {i["name"] for i in sa.inspect(engine).get_indexes("pilot_requests")}
+        assert {
+            "ix_pilot_requests_created_at",
+            "ix_pilot_requests_status_created_at",
+            "ix_pilot_requests_phone",
+            "ix_pilot_requests_email",
+        } <= idx
+    finally:
+        engine.dispose()
+
+
+def test_0004_offline_sql_for_postgresql(capsys: pytest.CaptureFixture[str]) -> None:
+    cfg = _config("postgresql+psycopg://u:p@localhost/db")
+    command.upgrade(cfg, "0003:0004", sql=True)
+    out = capsys.readouterr().out
+    assert "CREATE TABLE pilot_requests" in out and "TIMESTAMP WITH TIME ZONE" in out
+    assert "CONSTRAINT ck_pilot_requests_status CHECK" in out
+    assert "CONSTRAINT ck_pilot_requests_contact CHECK" in out
+    command.downgrade(cfg, "0004:0003", sql=True)
+    assert "DROP TABLE pilot_requests" in capsys.readouterr().out

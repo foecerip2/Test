@@ -31,6 +31,7 @@ API_DIR = Path(__file__).resolve().parent.parent
 ALL_TABLES = {
     "users", "otp_challenges", "sessions", "audit_logs", "rate_limits", "companies",
     "company_facts", "lead_scores", "import_jobs", "activity_events", "jobs", "campaigns",
+    "pilot_requests",
 }  # fmt: skip
 
 
@@ -59,7 +60,7 @@ def test_migrations_up_down_up_and_schema_matches_models() -> None:
     command.upgrade(cfg, "head")
     assert _tables(engine) == ALL_TABLES
     with engine.connect() as conn:
-        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "0003"
+        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "0004"
         ctx = MigrationContext.configure(conn, opts={"compare_type": False})
         assert compare_metadata(ctx, Base.metadata) == []
         cols = dict(
@@ -78,8 +79,11 @@ def test_migrations_up_down_up_and_schema_matches_models() -> None:
         )
         assert "(state, run_after)" in idx["ix_jobs_state_run_after"]
         assert "WHERE" in idx["uq_jobs_active_dedupe"]
+    command.downgrade(cfg, "0003")
+    assert _tables(engine) == ALL_TABLES - {"pilot_requests"}
+    command.upgrade(cfg, "head")
     command.downgrade(cfg, "0002")
-    assert _tables(engine) == ALL_TABLES - {"jobs", "campaigns"}
+    assert _tables(engine) == ALL_TABLES - {"jobs", "campaigns", "pilot_requests"}
     with engine.connect() as conn:
         facts_cols = {c["name"] for c in sa.inspect(conn).get_columns("company_facts")}
     assert "source" not in facts_cols and "fact_key" not in facts_cols
@@ -224,3 +228,43 @@ def test_utf8_roundtrip_in_jsonb_and_errors(factory: sessionmaker[Session]) -> N
         row = jobs.get_job(s, j.id)
         assert row.payload == {"имя": "Север Авто «№1»"}
         assert row.last_error == "Ошибка: сайт недоступен"
+
+
+def test_pilot_requests_on_postgres_end_to_end(factory: sessionmaker[Session]) -> None:
+    """Приём заявки, дедупликация и лимиты на реальной PostgreSQL."""
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.main import create_app
+    from app.models import PilotRequest
+
+    site = "https://autoflow.example.com"
+    settings = Settings(
+        database_url=URL,
+        secret_key="test-secret-key-0123456789-0123456789",
+        autoflow_origins=site,
+        trust_proxy_headers=True,
+        pilot_ip_per_hour=3,
+    )
+    app = create_app(settings)
+    hdr = {"Origin": site, "Content-Type": "application/json", "X-Forwarded-For": "203.0.113.5"}
+    data = {
+        "business_name": "Север Авто",
+        "city": "Казань",
+        "contact_name": "Иван",
+        "phone": "8 900 123 45 67",
+        "consent": True,
+        "website": "",
+    }
+    path = "/api/v1/autoflow/pilot-requests"
+    with TestClient(app, base_url="http://localhost:3000") as c:
+        assert c.post(path, json=data, headers=hdr).status_code == 202
+        assert c.post(path, json=data, headers=hdr).status_code == 202  # дубль
+        r = c.post(path, json={**data, "phone": "+79007654321"}, headers=hdr)
+        assert r.status_code == 202
+        r = c.post(path, json={**data, "phone": "+79007654322"}, headers=hdr)
+        assert r.status_code == 429 and "Retry-After" in r.headers
+    with factory() as s:
+        phones = sorted(s.scalars(sa.select(PilotRequest.phone)))
+        assert phones == ["+79001234567", "+79007654321"]
+    app.state.engine.dispose()

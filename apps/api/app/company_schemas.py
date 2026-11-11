@@ -161,3 +161,5 @@ class DashboardOut(BaseModel):
     by_state: dict[str, int]
     top_companies: list[CompanyOut]
     recent: list[ActivityOut]
+    # Новые заявки на пилот AutoFlow: только для owner (у остальных null).
+    pilot_requests_new: int | None = None

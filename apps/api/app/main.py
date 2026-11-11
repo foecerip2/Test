@@ -16,7 +16,18 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import Settings
 from app.db import make_engine, make_session_factory
 from app.mail import Mailer, make_mailer
-from app.routers import admin, auth, campaigns, companies, dashboard, health, imports, jobs, sources
+from app.routers import (
+    admin,
+    auth,
+    campaigns,
+    companies,
+    dashboard,
+    health,
+    imports,
+    jobs,
+    pilot,
+    sources,
+)
 from app.security import AppError
 
 log = logging.getLogger("leadhunter.api")
@@ -59,6 +70,40 @@ def origin_allowed(request: Request, settings: Settings) -> bool:
     return True  # не-браузерные клиенты; мутации с сессией всё равно требуют CSRF
 
 
+def pilot_origin(request: Request, settings: Settings) -> str | None:
+    """Origin публичной формы пилота, если он в AUTOFLOW_ORIGINS; иначе None.
+
+    Здесь Origin/Referer обязательны (в отличие от остальных мутаций): форма — браузерная."""
+    allowed = settings.autoflow_origin_set
+    origin = request.headers.get("origin")
+    if origin is not None:
+        value = origin.strip().rstrip("/").lower()
+    else:
+        referer = request.headers.get("referer")
+        if not referer:
+            return None
+        p = urlsplit(referer)
+        value = f"{p.scheme}://{p.netloc}".lower()
+    return value if value in allowed else None
+
+
+def _cors_headers(origin: str, *, preflight: bool) -> dict[str, str]:
+    headers = {
+        "Access-Control-Allow-Origin": origin,
+        "Vary": "Origin",
+        "Access-Control-Expose-Headers": "X-Request-ID, Retry-After",
+    }
+    if preflight:
+        headers.update(
+            {
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Max-Age": "600",
+            }
+        )
+    return headers
+
+
 def create_app(settings: Settings | None = None, mailer: Mailer | None = None) -> FastAPI:
     settings = settings or Settings()
     engine = make_engine(settings.database_url)
@@ -80,7 +125,22 @@ def create_app(settings: Settings | None = None, mailer: Mailer | None = None) -
     ) -> Response:
         request.state.request_id = uuid.uuid4().hex
         response: Response
-        if request.method in MUTATING and not origin_allowed(request, settings):
+        if request.url.path == pilot.PUBLIC_PATH and request.method in ("POST", "OPTIONS"):
+            # Публичная форма другого сайта: CORS только для AUTOFLOW_ORIGINS, cookie не нужны.
+            allowed_origin = pilot_origin(request, settings)
+            if allowed_origin is None:
+                response = error_response(
+                    request, 403, "ORIGIN_FORBIDDEN", "Запрос с недопустимого источника."
+                )
+            elif request.method == "OPTIONS":
+                response = Response(
+                    status_code=204, headers=_cors_headers(allowed_origin, preflight=True)
+                )
+            else:
+                response = await call_next(request)
+                for k, v in _cors_headers(allowed_origin, preflight=False).items():
+                    response.headers[k] = v
+        elif request.method in MUTATING and not origin_allowed(request, settings):
             response = error_response(
                 request, 403, "ORIGIN_FORBIDDEN", "Запрос с недопустимого источника."
             )
@@ -134,6 +194,7 @@ def create_app(settings: Settings | None = None, mailer: Mailer | None = None) -
     app.include_router(jobs.router)
     app.include_router(campaigns.router)
     app.include_router(sources.router)
+    app.include_router(pilot.router)
     return app
 
 
