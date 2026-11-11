@@ -202,7 +202,8 @@ def test_no_personal_data_is_stored_or_logged(
     blob += " | " + " | ".join(r.getMessage() for r in caplog.records)
     for secret in ("sever-avto.example.com", "info@", "contact@", "0000001", "000-00-0", "(900)"):
         assert secret not in blob, secret
-    assert not re.search(r"\+?7[\s(-]*9\d\d|8[\s(-]*9\d\d", blob)  # ни одного телефона
+    # ни одного телефона; начало номера не посреди слова/UUID (иначе «…c8-9ab…» даёт ложное срабатывание)
+    assert not re.search(r"(?<![\w-])(?:\+7|7|8)[\s(-]*9\d\d[\s)-]*\d", blob)
     contact = by_key(facts(ctx, cid))["contact:phone"]
     assert contact.kind == "confirmed" and "значение не сохранено" in contact.text
 
