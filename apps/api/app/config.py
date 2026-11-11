@@ -12,7 +12,11 @@ DEV_SECRET = "dev-insecure-secret-key-do-not-use-in-prod-0123456789"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=None, extra="ignore", case_sensitive=False)
+    # env_ignore_empty: пустая переменная окружения (например SMTP_PORT="" из compose)
+    # считается «не заданной» и заменяется значением по умолчанию.
+    model_config = SettingsConfigDict(
+        env_file=None, extra="ignore", case_sensitive=False, env_ignore_empty=True
+    )
 
     env: Literal["dev", "prod"] = "dev"
     database_url: str = "sqlite+pysqlite:///./leadhunter-dev.db"
