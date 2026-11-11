@@ -1,21 +1,12 @@
-# Test
+# LeadHunter AI
 
-Claude Code project setup (`.claude/`):
+Приватный кабинет для поиска и квалификации автосервисов, согласования сообщений и контроля ответов. Сайт + Android-приложение.
 
-- `skills/` — skills from Leonxlnx/taste-skill, emilkowalski/skills, nextlevelbuilder/ui-ux-pro-max-skill and the ECC fork centrender/everything-claude-code-affaanmustafa
-- `agents/`, `commands/` — ECC agents and slash commands
-- `ecc/` — ECC hook scripts; `settings.json` wires them in (via `CLAUDE_PLUGIN_ROOT=$CLAUDE_PROJECT_DIR/.claude/ecc`)
+Статус: **Фаза 1** (интерфейс на демо-данных) завершена; впереди Фаза 2 (backend, вход). Деплой: код попадает в `main` только с разрешения владельца → тесты → сервер сам обновляется (`https://ai.vaylonet.ru`).
 
-Hook behaviour can be tuned with ECC env flags (e.g. `ECC_HOOK_PROFILE`, `ECC_DISABLED_HOOKS`); remove entries from `.claude/settings.json` to disable a hook.
+- Установка на сервер одной командой и регламент: [docs/OPERATIONS.md](docs/OPERATIONS.md)
+- План и аудит: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) · Решения: [docs/DECISIONS.md](docs/DECISIONS.md) · Задачи: [docs/TASKS.md](docs/TASKS.md)
+- Скриншоты (макет и реализация): [docs/screenshots/](docs/screenshots/)
+- Исходный дизайн-пакет и ТЗ: [docs/design-reference/](docs/design-reference/)
 
-## Проект «Комбайн»
-
-- `docs/PRD.md` — требования к продукту
-- `docs/schema.sql` — схема данных PostgreSQL (Supabase), проверена на PostgreSQL 16
-- `docs/design/mockup.html` — макет интерфейса (открыть в браузере)
-
-## Сайт VAYLO
-
-`vaylo/index.html` — сайт VPN-сервиса одним файлом (маршруты по хэшу, без сборки): главная, тарифы, вход и регистрация, личный кабинет, инструкции, поддержка (FAQ и форма), контакты. Открывается двойным кликом или любым статическим хостингом.
-
-Работает в демо-режиме: аккаунты, устройства и обращения хранятся в браузере (`localStorage`). Для рабочего запуска нужно заменить слой `store` и обработчики форм запросами к серверу.
+Запуск разработки: `pnpm install && pnpm dev` (Node 22). Проверки: `pnpm lint && pnpm typecheck && pnpm test && pnpm e2e`.

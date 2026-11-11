@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AutoFlow</string>
+    <string name="title_activity_main">AutoFlow</string>
+    <string name="package_name">ai.vaylonet.autoflow</string>
+    <string name="custom_url_scheme">ai.vaylonet.autoflow</string>
+</resources>

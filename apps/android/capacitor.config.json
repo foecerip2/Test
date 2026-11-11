@@ -1,0 +1,15 @@
+{
+  "appId": "ai.vaylonet.leadhunter",
+  "appName": "LeadHunter",
+  "webDir": "www",
+  "server": {
+    "url": "https://ai.vaylonet.ru",
+    "cleartext": false,
+    "allowNavigation": ["ai.vaylonet.ru"],
+    "errorPath": "error.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#f6f7f5"
+  }
+}

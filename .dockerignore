@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+.git
+.github
+docs
+infra
+**/test-results
+**/playwright-report
+.env*
+
+# Android-проект: нативная часть не нужна в образе сайта
+apps/android/android
+apps/android/www

@@ -1,0 +1,57 @@
+# AutoFlow на ОТДЕЛЬНОМ сервере: только лендинг (autoflow-web) и Caddy. Ставит infra/autoflow/migrate-to-server.sh в /opt/autoflow.
+# Требования: Docker + compose plugin; DNS-запись AUTOFLOW_DOMAIN → IP этого сервера; порты 80/443 свободны.
+name: autoflow
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  autoflow-web:
+    image: ${AUTOFLOW_IMAGE:?AUTOFLOW_IMAGE не задан}
+    pull_policy: never   # образ собирает migrate-to-server.sh / обновление
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/apps/autoflow-web/.next/cache
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging: *logging
+    networks: [internal]
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      autoflow-web: { condition: service_healthy }
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      AUTOFLOW_DOMAIN: ${AUTOFLOW_DOMAIN:?AUTOFLOW_DOMAIN не задан}
+      # куда проксировать /api/*: пока API живёт на основном сервере (https://ai.vaylonet.ru), потом — собственный API AutoFlow
+      AUTOFLOW_API_UPSTREAM: ${AUTOFLOW_API_UPSTREAM:?AUTOFLOW_API_UPSTREAM не задан}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 96m
+    logging: *logging
+    networks: [internal]
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

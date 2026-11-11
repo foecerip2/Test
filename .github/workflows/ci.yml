@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore: ['.claude/**']
+  push:
+    branches: [main]
+    paths-ignore: ['.claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ВАЖНО: перед продакшном закрепите сторонние actions по commit SHA (ADR-007);
+# версии по тегам ниже — официальные релизы, SHA не проверялись из среды разработки.
+jobs:
+  # Имя job `test` используется сервером: коммит из main разворачивается, только если для него `test` завершился успешно.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Playwright (Chromium)
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      # AutoFlow (лендинг): тот же job, чтобы не платить за второй checkout/install/Playwright; браузер уже установлен выше
+      - name: AutoFlow — lint, typecheck, vitest
+        run: pnpm --filter autoflow-web lint && pnpm --filter autoflow-web typecheck && pnpm --filter autoflow-web test
+      - name: AutoFlow — сборка и e2e
+        run: pnpm --filter autoflow-web build && pnpm --filter autoflow-web e2e
+      - name: Проверка сборки Docker-образов (web, AutoFlow)
+        run: |
+          docker build -t lh-web:ci -f apps/web/Dockerfile .
+          docker build -t lh-autoflow:ci -f apps/autoflow-web/Dockerfile .
+      - name: Аудит зависимостей (прод)
+        run: pnpm audit --prod --audit-level high
+        continue-on-error: true
+      - name: Отчёт e2e при падении
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/test-results
+            apps/autoflow-web/test-results
+          retention-days: 5
+
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/api/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest

@@ -1,0 +1,118 @@
+[
+  {
+    "in": "https://www.Example.com/path?q=1",
+    "out": "example.com"
+  },
+  {
+    "in": "sever-motor.example",
+    "out": "sever-motor.example"
+  },
+  {
+    "in": "",
+    "out": null
+  },
+  {
+    "in": "localhost",
+    "out": null
+  },
+  {
+    "in": "ftp://example.com",
+    "out": null
+  },
+  {
+    "in": "javascript:alert(1)",
+    "out": null
+  },
+  {
+    "in": "bad host",
+    "out": null
+  },
+  {
+    "in": "http://user:pw@WWW.Auto.RU:8080/x",
+    "out": "auto.ru"
+  },
+  {
+    "in": "авто-сервис.рф",
+    "out": "xn----7sbgbot2bshed.xn--p1ai"
+  },
+  {
+    "in": "https://Пример.РФ/страница",
+    "out": "xn--e1afmkfd.xn--p1ai"
+  },
+  {
+    "in": "example.com:99999",
+    "out": null
+  },
+  {
+    "in": "example.com:abc",
+    "out": null
+  },
+  {
+    "in": "http://[::1]/",
+    "out": null
+  },
+  {
+    "in": "www.",
+    "out": null
+  },
+  {
+    "in": "http://",
+    "out": null
+  },
+  {
+    "in": "a..b.com",
+    "out": "a..b.com"
+  },
+  {
+    "in": "example.com/path#frag",
+    "out": "example.com"
+  },
+  {
+    "in": "ЭКЗАМПЛ.com",
+    "out": "xn--80aniges7g.com"
+  },
+  {
+    "in": "https://sub.domain.example.co.uk/",
+    "out": "sub.domain.example.co.uk"
+  },
+  {
+    "in": "mailto:a@b.ru",
+    "out": "b.ru"
+  },
+  {
+    "in": "exa mple.com",
+    "out": null
+  },
+  {
+    "in": "http://example_site.com",
+    "out": null
+  },
+  {
+    "in": "HTTP://EXAMPLE.COM",
+    "out": "example.com"
+  },
+  {
+    "in": "  www.site.ru  ",
+    "out": "site.ru"
+  },
+  {
+    "in": "//example.com",
+    "out": "example.com"
+  },
+  {
+    "in": "example.com?x=1",
+    "out": "example.com"
+  },
+  {
+    "in": "https://example.com.",
+    "out": "example.com."
+  },
+  {
+    "in": "https://café.com",
+    "out": "xn--caf-dma.com"
+  },
+  {
+    "in": null,
+    "out": null
+  }
+]

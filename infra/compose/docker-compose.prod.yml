@@ -1,0 +1,217 @@
+# VPS-1 (1 ядро, ~1.9 ГБ RAM). Сервисы: web + caddy всегда; db + api — профиль `api`
+# (lh-update прописывает COMPOSE_PROFILES=api в .env, когда в коммите есть apps/api/Dockerfile);
+# autoflow-web — профиль `autoflow` (COMPOSE_PROFILES=api,autoflow, когда задан AUTOFLOW_DOMAIN).
+#
+# Бюджет памяти (mem_limit — потолок, обычно потребление ниже):
+#   web 384 + api 256 + worker 192 + db 256 + caddy 96 = 1184 МБ; на ОС, docker, lh-update и page cache остаётся ~700 МБ из 1.9 ГБ.
+#   Сборка образов (node до ~1 ГБ) идёт на самом сервере поверх работающего стека, поэтому нужен swap 3 ГБ (ставит install.sh).
+name: leadhunter
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  db:
+    profiles: ["api"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: leadhunter
+      POSTGRES_DB: leadhunter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    # Малый профиль памяти под 256 МБ. Порт НЕ публикуется: БД доступна только из сети compose.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]   # нужны entrypoint postgres (chown + gosu)
+    mem_limit: 256m
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leadhunter -d leadhunter"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging: *logging
+    networks: [internal]
+
+  api:
+    profiles: ["api"]
+    image: ${API_IMAGE:-lh-api:none}
+    pull_policy: never   # образ собирается на сервере службой lh-update
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      ENV: prod
+      DATABASE_URL: ${DATABASE_URL:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      # Разрешённый Origin для публичной формы заявок AutoFlow (пусто = эндпойнт закрыт)
+      AUTOFLOW_DOMAIN: ${AUTOFLOW_DOMAIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      MAIL_BACKEND: ${MAIL_BACKEND:-smtp}
+      MAIL_RELAY_URL: ${MAIL_RELAY_URL:-}
+      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-ssl}
+    depends_on:
+      db: { condition: service_healthy }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 256m
+    healthcheck:
+      # /readyz проверяет БД; python есть в любом образе API
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=4).status == 200 else 1)"]
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 40s   # на старте контейнер применяет alembic upgrade head
+    logging: *logging
+    networks: [internal]
+
+  # Воркер очереди задач (ADR-017): проверка сайтов компаний. Тот же образ, что и api; миграции НЕ
+  # применяет (их делает api при старте), поэтому ждёт здоровый api. Наружу портов нет.
+  worker:
+    profiles: ["api"]
+    image: ${API_IMAGE:-lh-api:none}
+    pull_policy: never   # образ собирается на сервере службой lh-update
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp   # здесь лежит heartbeat-файл воркера
+    environment:
+      ENV: prod
+      DATABASE_URL: ${DATABASE_URL:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      # Разрешённый Origin для публичной формы заявок AutoFlow (пусто = эндпойнт закрыт)
+      AUTOFLOW_DOMAIN: ${AUTOFLOW_DOMAIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      MAIL_BACKEND: ${MAIL_BACKEND:-smtp}
+      MAIL_RELAY_URL: ${MAIL_RELAY_URL:-}
+      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-ssl}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+    depends_on:
+      db: { condition: service_healthy }
+      api: { condition: service_healthy }
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 192m
+    stop_grace_period: 40s   # SIGTERM: текущая задача возвращается в очередь на ближайшей проверке
+    healthcheck:
+      # heartbeat-файл обновляется раз в 15 с, только если БД отвечает; порог свежести — 90 с
+      test: ["CMD", "python", "-m", "app.worker", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging: *logging
+    networks: [internal]
+
+  web:
+    image: ${WEB_IMAGE:?WEB_IMAGE не задан}
+    pull_policy: never   # образ собирается на сервере службой lh-update
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging: *logging
+    networks: [internal]
+
+  # AutoFlow (лендинг, отдельный контур): профиль `autoflow`, включается `lh-config autoflow DOMAIN` (AUTOFLOW_DOMAIN в .env).
+  # Порты не публикуются; доступен только Caddy по сети compose. +192 МБ к бюджету памяти (итого потолки ~1,18 ГБ).
+  autoflow-web:
+    profiles: ["autoflow"]
+    image: ${AUTOFLOW_IMAGE:-lh-autoflow:none}
+    pull_policy: never   # образ собирается на сервере службой lh-update
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/apps/autoflow-web/.next/cache
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    logging: *logging
+    networks: [internal]
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      web: { condition: service_healthy }
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN не задан}
+      # Пусто = AutoFlow выключен (см. autoflow.caddy: Caddy не создаёт сайт и не запрашивает сертификат)
+      AUTOFLOW_DOMAIN: ${AUTOFLOW_DOMAIN:-}
+      # Шлюз basic-auth включается, только если BASIC_HASH непустой (см. gate.caddy, его выбирают lh-update/lh-config)
+      BASIC_USER: ${BASIC_USER:-owner}
+      BASIC_HASH: ${BASIC_HASH:-}
+    volumes:
+      - ./caddy:/etc/caddy:ro     # каталог (а не файл): замена файлов видна контейнеру
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 96m
+    logging: *logging
+    networks: [internal]
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pgdata:
+
+networks:
+  internal:

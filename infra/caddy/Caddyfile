@@ -1,0 +1,30 @@
+# AutoFlow на отдельном домене (необязательно). autoflow.caddy — копия autoflow.on.caddy (если AUTOFLOW_DOMAIN задан и образ
+# autoflow собран) или autoflow.off.caddy (пустая заглушка): без AUTOFLOW_DOMAIN Caddy даже не пытается получать сертификат.
+# Выбор делают lh-update / `lh-config autoflow`.
+# Маска (а не точное имя): если файла ещё нет (старая версия lh-update его не ставит), Caddy лишь предупреждает, а не падает.
+import /etc/caddy/autoflow.caddy*
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Необязательный шлюз basic-auth. gate.caddy — копия gate.on.caddy (если BASIC_HASH в .env непустой)
+	# или gate.off.caddy (пусто); выбор делают lh-update / `lh-config gate`.
+	import /etc/caddy/gate.caddy
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
