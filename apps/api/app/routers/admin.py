@@ -31,14 +31,16 @@ def _out(u: User) -> AdminUserOut:
 
 def _get_user(db: Session, user_id: uuid.UUID) -> User:
     user = db.get(User, user_id)
-    if user is None:
+    if user is None or not user.leadhunter_member:
         raise AppError(404, "NOT_FOUND", "Пользователь не найден.")
     return user
 
 
 @router.get("/users", response_model=UsersOut)
 def list_users(_owner: User = Depends(require_owner), db: Session = Depends(get_db)) -> UsersOut:
-    users = db.scalars(select(User).order_by(User.created_at, User.email)).all()
+    users = db.scalars(
+        select(User).where(User.leadhunter_member.is_(True)).order_by(User.created_at, User.email)
+    ).all()
     return UsersOut(users=[_out(u) for u in users])
 
 
@@ -70,7 +72,7 @@ def block_user(
         owners = db.scalar(
             select(func.count())
             .select_from(User)
-            .where(User.role == "owner", User.status == "active")
+            .where(User.role == "owner", User.status == "active", User.leadhunter_member.is_(True))
         )
         if (owners or 0) <= 1:
             raise AppError(409, "LAST_OWNER", "Нельзя заблокировать последнего владельца.")

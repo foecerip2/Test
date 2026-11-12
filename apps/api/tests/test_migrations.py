@@ -30,6 +30,7 @@ NEW_TABLES = {
     "pilot_requests",
 }
 COMPANY_TABLES = NEW_TABLES - {"jobs", "campaigns", "pilot_requests"}
+AF_TABLES = {"af_accounts", "af_workspaces", "af_services", "af_resources", "af_appointments"}
 OLD_TABLES = {"users", "otp_challenges", "sessions", "audit_logs", "rate_limits"}
 
 
@@ -64,8 +65,8 @@ def _version(url: str) -> str | None:
 
 def test_upgrade_creates_all_tables(db_url: str) -> None:
     command.upgrade(_config(db_url), "head")
-    assert _tables(db_url) == OLD_TABLES | NEW_TABLES
-    assert _version(db_url) == "0004"
+    assert _tables(db_url) == OLD_TABLES | NEW_TABLES | AF_TABLES
+    assert _version(db_url) == "0005"
 
 
 def test_downgrade_to_0001_removes_only_new_tables(db_url: str) -> None:
@@ -83,7 +84,7 @@ def test_upgrade_downgrade_upgrade_roundtrip(db_url: str) -> None:
     command.upgrade(cfg, "head")
     command.downgrade(cfg, "0001")
     command.upgrade(cfg, "head")
-    assert _tables(db_url) == OLD_TABLES | NEW_TABLES
+    assert _tables(db_url) == OLD_TABLES | NEW_TABLES | AF_TABLES
 
 
 def test_schema_matches_models(db_url: str) -> None:
@@ -194,7 +195,7 @@ def test_0004_is_additive_and_downgrade_keeps_older_data(db_url: str) -> None:
             )
         assert "pilot_requests" not in _tables(db_url)
         command.upgrade(cfg, "head")
-        assert _version(db_url) == "0004" and "pilot_requests" in _tables(db_url)
+        assert _version(db_url) == "0005" and "pilot_requests" in _tables(db_url)
         with engine.begin() as conn:
             conn.execute(_PILOT_INSERT, _pilot_row())
         command.downgrade(cfg, "0003")

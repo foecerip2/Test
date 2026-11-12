@@ -1,47 +1,106 @@
-import { IconBell } from "@/components/Icons";
+"use client";
+import { useState } from "react";
+import { IconCalendar, IconCheck } from "./Icons";
 
-/** Иллюстрация первой версии: расписание дня и новая заявка. Данные вымышленные, подписано «Пример интерфейса». */
+/** Только иллюстрация продукта: на лендинге всегда подписана как пример. */
 export function HeroCard() {
+  const [confirmed, setConfirmed] = useState(false);
   return (
-    <div className="board rise" style={{ "--d": 3 } as React.CSSProperties} role="img" aria-label="Пример интерфейса: расписание на день, новая заявка получает статус «Подтверждена»">
-      <div className="board-inner" aria-hidden="true">
-        <div className="board-head">
-          <span className="board-title">Расписание на день</span>
-          <span className="board-tag">Пример интерфейса</span>
+    <div
+      className="product-preview rise"
+      aria-label="Пример интерфейса AutoFlow"
+    >
+      <div className="preview-chrome">
+        <span className="preview-mark">a.</span>
+        <span>
+          Север Авто <small>Пример интерфейса</small>
+        </span>
+        <span className="preview-avatar">СА</span>
+      </div>
+      <div className="preview-body">
+        <div className="preview-heading">
+          <div>
+            <span>ВСЁ ПОД КОНТРОЛЕМ</span>
+            <h2>
+              Хороший день начинается
+              <br />с расписания.
+            </h2>
+          </div>
+          <IconCalendar size={22} />
         </div>
-        <ul className="slots">
-          <li className="slot">
-            <time>10:00</time>
-            <span>Замена масла</span>
-            <span className="chip chip--ok">Подтверждена</span>
-          </li>
-          <li className="slot slot--new">
-            <time>12:30</time>
-            <span>Диагностика ходовой</span>
-            <span className="chip-stack">
-              <span className="chip chip--new">Новая</span>
-              <span className="chip chip--ok chip--later">Подтверждена</span>
+        <div className="preview-week" aria-hidden="true">
+          {["Пн", "Вт", "Ср", "Чт", "Пт"].map((label, i) => (
+            <span key={label} className={i === 2 ? "selected" : ""}>
+              {label}
+              <b>{12 + i}</b>
             </span>
-          </li>
-          <li className="slot slot--free">
-            <time>14:00</time>
-            <span>Свободно</span>
-            <span />
-          </li>
-          <li className="slot slot--free">
-            <time>16:30</time>
-            <span>Свободно</span>
-            <span />
-          </li>
-        </ul>
-        <div className="notice">
-          <IconBell size={22} />
-          <p>
-            <b>Новая заявка</b>
-            <span>Шиномонтаж · завтра 09:00</span>
-          </p>
+          ))}
+        </div>
+        <div className="preview-columns">
+          <span>Время</span>
+          <span>Бокс 01</span>
+          <span>Бокс 02</span>
+        </div>
+        <div className="preview-schedule">
+          <div className="preview-times">
+            <span>09:00</span>
+            <span>10:00</span>
+            <span>11:00</span>
+            <span>12:00</span>
+          </div>
+          <div className="preview-track">
+            <div className="preview-event blue">
+              <span>09:00 – 10:00</span>
+              <strong>Замена масла</strong>
+              <small>Иван · Подтверждена</small>
+            </div>
+            <div className={`preview-event ${confirmed ? "green" : "amber"}`}>
+              <span>11:00 – 12:00</span>
+              <strong>Диагностика</strong>
+              <small>
+                {confirmed ? "Запись подтверждена" : "Ожидает подтверждения"}
+              </small>
+            </div>
+          </div>
+          <div className="preview-track">
+            <div className="preview-free">Свободное время</div>
+            <div className="preview-event green">
+              <span>10:00 – 11:30</span>
+              <strong>Шиномонтаж</strong>
+              <small>Анна · Подтверждена</small>
+            </div>
+          </div>
+        </div>
+        <div className="preview-action">
+          <span className="preview-notify">
+            <span className="notify-dot" />
+            <span>
+              <strong>{confirmed ? "Всё готово" : "Новая запись"}</strong>
+              <small>
+                {confirmed ? "Пример: статус изменён" : "Диагностика · Бокс 01"}
+              </small>
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setConfirmed((v) => !v)}
+            className={confirmed ? "is-confirmed" : ""}
+          >
+            {confirmed ? (
+              <>
+                <IconCheck size={15} /> Подтверждена
+              </>
+            ) : (
+              "Подтвердить"
+            )}
+          </button>
         </div>
       </div>
+      <p className="preview-live" role="status">
+        {confirmed
+          ? "Пример: запись подтверждена"
+          : "Попробуйте подтвердить запись в примере"}
+      </p>
     </div>
   );
 }

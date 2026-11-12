@@ -10,6 +10,6 @@ if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(url)) {
   console.error("AUTOFLOW_URL должен быть вида https://домен");
   process.exit(1);
 }
-writeFileSync(`${root}www/config.js`, `window.AUTOFLOW_URL = ${JSON.stringify(url)};\n`);
+writeFileSync(`${root}www/config.js`, `window.AUTOFLOW_URL = ${JSON.stringify(`${url}/app`)};\n`);
 const r = spawnSync("pnpm", ["exec", "cap", "sync", "android"], { cwd: root, stdio: "inherit", env: process.env });
 process.exit(r.status ?? 1);

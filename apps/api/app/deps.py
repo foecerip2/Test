@@ -20,6 +20,26 @@ CSRF_COOKIE = "lh_csrf"
 CSRF_HEADER = "X-CSRF-Token"
 
 
+def auth_application(request: Request) -> str:
+    path = request.url.path
+    return (
+        "autoflow"
+        if any(
+            path.startswith(prefix)
+            for prefix in (
+                "/api/v1/autoflow/auth/",
+                "/api/v1/autoflow/app/",
+                "/api/v1/autoflow/account",
+            )
+        )
+        else "leadhunter"
+    )
+
+
+def cookie_names(application: str) -> tuple[str, str]:
+    return ("af_session", "af_csrf") if application == "autoflow" else (SESSION_COOKIE, CSRF_COOKIE)
+
+
 def get_settings(request: Request) -> Settings:
     settings: Settings = request.app.state.settings
     return settings
@@ -51,18 +71,24 @@ def get_auth(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> AuthContext:
-    token = request.cookies.get(SESSION_COOKIE)
+    application = auth_application(request)
+    token = request.cookies.get(cookie_names(application)[0])
     if not token:
         raise security.AppError(401, "UNAUTHENTICATED", "Требуется вход.")
     row = db.scalar(
         select(SessionRow).where(
-            SessionRow.token_hash == security.session_token_hash(settings, token)
+            SessionRow.token_hash == security.session_token_hash(settings, token),
+            SessionRow.application == application,
         )
     )
     if row is None or row.revoked_at is not None or row.expires_at <= security.now():
         raise security.AppError(401, "UNAUTHENTICATED", "Сессия недействительна. Войдите снова.")
     user = db.get(User, row.user_id)
-    if user is None or user.status == "blocked":
+    if (
+        user is None
+        or user.status == "blocked"
+        or (application == "leadhunter" and not user.leadhunter_member)
+    ):
         raise security.AppError(401, "UNAUTHENTICATED", "Сессия недействительна. Войдите снова.")
     return AuthContext(session=row, user=user, token=token)
 
@@ -89,7 +115,7 @@ def require_csrf(
     settings: Settings = Depends(get_settings),
 ) -> AuthContext:
     header = request.headers.get(CSRF_HEADER, "")
-    cookie = request.cookies.get(CSRF_COOKIE, "")
+    cookie = request.cookies.get(cookie_names(auth_application(request))[1], "")
     expected = security.csrf_for_session(settings, auth.token)
     ok = (
         bool(header)

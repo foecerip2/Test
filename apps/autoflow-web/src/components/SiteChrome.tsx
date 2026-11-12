@@ -16,9 +16,14 @@ export function Header({ home = false }: { home?: boolean }) {
           <a href={`${p}#features`}>Возможности</a>
           <a href={`${p}#faq`}>Вопросы</a>
         </nav>
-        <a className="btn btn--primary btn--sm" href={`${p}#pilot`}>
-          Хочу пилот
-        </a>
+        <div className="header-actions">
+          <Link className="header-login" href="/login">
+            Войти
+          </Link>
+          <a className="btn btn--primary btn--sm" href={`${p}#pilot`}>
+            Хочу пилот
+          </a>
+        </div>
       </div>
     </header>
   );
@@ -35,18 +40,28 @@ export function Footer() {
               AutoFlow
             </Link>
             <p className="lead" style={{ marginTop: 14, fontSize: "1rem" }}>
-              Заявки и запись клиентов для автосервисов. Сервис готовится к запуску: сейчас набираем пилот.
+              Заявки и запись клиентов для автосервисов. Сервис готовится к
+              запуску: сейчас набираем пилот.
             </p>
           </div>
           <div>
             <h2>Контакты</h2>
             <ul>
               <li>
-                <a href={`mailto:${siteConfig.contactEmail}`}>{siteConfig.contactEmail}</a>
+                {siteConfig.contactEmail.endsWith(".example") ? (
+                  <Link href="/#pilot">Форма заявки</Link>
+                ) : (
+                  <a href={`mailto:${siteConfig.contactEmail}`}>
+                    {siteConfig.contactEmail}
+                  </a>
+                )}
               </li>
               {siteConfig.contactTelegram ? (
                 <li>
-                  <a href={`https://t.me/${siteConfig.contactTelegram.replace(/^@/, "")}`} rel="noopener noreferrer">
+                  <a
+                    href={`https://t.me/${siteConfig.contactTelegram.replace(/^@/, "")}`}
+                    rel="noopener noreferrer"
+                  >
                     Telegram {siteConfig.contactTelegram}
                   </a>
                 </li>
@@ -57,7 +72,12 @@ export function Footer() {
             <h2>Документы</h2>
             <ul>
               <li>
-                <Link href="/privacy">Политика обработки персональных данных</Link>
+                <Link href="/login">Личный кабинет</Link>
+              </li>
+              <li>
+                <Link href="/privacy">
+                  Политика обработки персональных данных
+                </Link>
               </li>
               <li>
                 <Link href="/#pilot">Оставить заявку на пилот</Link>
@@ -65,7 +85,10 @@ export function Footer() {
             </ul>
           </div>
         </div>
-        <p className="foot-small">AutoFlow. Информация на странице ознакомительная и не является публичной офертой.</p>
+        <p className="foot-small">
+          AutoFlow. Информация на странице ознакомительная и не является
+          публичной офертой.
+        </p>
       </div>
     </footer>
   );

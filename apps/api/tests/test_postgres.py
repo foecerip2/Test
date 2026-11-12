@@ -28,11 +28,12 @@ from app.services import jobs
 URL = os.environ.get("TEST_POSTGRES_URL", "")
 pytestmark = pytest.mark.skipif(not URL, reason="TEST_POSTGRES_URL не задан")
 API_DIR = Path(__file__).resolve().parent.parent
+AF_TABLES = {"af_accounts", "af_workspaces", "af_services", "af_resources", "af_appointments"}
 ALL_TABLES = {
     "users", "otp_challenges", "sessions", "audit_logs", "rate_limits", "companies",
     "company_facts", "lead_scores", "import_jobs", "activity_events", "jobs", "campaigns",
     "pilot_requests",
-}  # fmt: skip
+} | AF_TABLES  # fmt: skip
 
 
 def _cfg() -> Config:
@@ -60,7 +61,7 @@ def test_migrations_up_down_up_and_schema_matches_models() -> None:
     command.upgrade(cfg, "head")
     assert _tables(engine) == ALL_TABLES
     with engine.connect() as conn:
-        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "0004"
+        assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar() == "0005"
         ctx = MigrationContext.configure(conn, opts={"compare_type": False})
         assert compare_metadata(ctx, Base.metadata) == []
         cols = dict(
@@ -80,10 +81,10 @@ def test_migrations_up_down_up_and_schema_matches_models() -> None:
         assert "(state, run_after)" in idx["ix_jobs_state_run_after"]
         assert "WHERE" in idx["uq_jobs_active_dedupe"]
     command.downgrade(cfg, "0003")
-    assert _tables(engine) == ALL_TABLES - {"pilot_requests"}
+    assert _tables(engine) == ALL_TABLES - AF_TABLES - {"pilot_requests"}
     command.upgrade(cfg, "head")
     command.downgrade(cfg, "0002")
-    assert _tables(engine) == ALL_TABLES - {"jobs", "campaigns", "pilot_requests"}
+    assert _tables(engine) == ALL_TABLES - AF_TABLES - {"jobs", "campaigns", "pilot_requests"}
     with engine.connect() as conn:
         facts_cols = {c["name"] for c in sa.inspect(conn).get_columns("company_facts")}
     assert "source" not in facts_cols and "fact_key" not in facts_cols
@@ -268,3 +269,59 @@ def test_pilot_requests_on_postgres_end_to_end(factory: sessionmaker[Session]) -
         phones = sorted(s.scalars(sa.select(PilotRequest.phone)))
         assert phones == ["+79001234567", "+79007654321"]
     app.state.engine.dispose()
+
+
+@pytest.mark.parametrize("same_resource", [True, False])
+def test_autoflow_parallel_appointments_are_serialized(
+    factory: sessionmaker[Session], same_resource: bool
+) -> None:
+    """Два клиента одновременно: один бокс → один победитель, разные боксы → оба."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import timedelta
+
+    from app import security
+    from app.autoflow_models import Appointment, Resource, Service, Workspace
+    from app.autoflow_schemas import AppointmentIn
+    from app.models import User
+    from app.routers.autoflow import create_appointment
+    from app.security import AppError
+
+    with factory() as db:
+        user = User(email="owner@example.com", role="owner", status="active")
+        db.add(user)
+        db.flush()
+        w = Workspace(owner_id=user.id, name="Тест", city="Казань", opens=540, closes=1140)
+        db.add(w)
+        db.flush()
+        service = Service(workspace_id=w.id, name="Диагностика", duration=60, price=1000)
+        resources = [Resource(workspace_id=w.id, name=f"Бокс {i}") for i in range(2)]
+        db.add_all([service, *resources])
+        db.commit()
+        uid, sid, rids = user.id, service.id, [r.id for r in resources]
+    barrier = threading.Barrier(2)
+
+    def attempt(index: int) -> int:
+        with factory() as db:
+            owner = db.get(User, uid)
+            assert owner is not None
+            body = AppointmentIn(
+                service_id=sid,
+                resource_id=rids[0 if same_resource else index],
+                day=(security.now() + timedelta(days=1)).date(),
+                starts=600,
+                customer="Тест",
+                phone="+79991234567",
+                consent=True,
+            )
+            barrier.wait(timeout=10)
+            try:
+                create_appointment(body, owner, db)
+                return 201
+            except AppError as error:
+                return error.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = sorted(pool.map(attempt, range(2)))
+    assert results == ([201, 409] if same_resource else [201, 201])
+    with factory() as db:
+        assert len(list(db.scalars(sa.select(Appointment)))) == (1 if same_resource else 2)

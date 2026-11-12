@@ -12,3 +12,5 @@
 Запуск разработки: `pnpm install && pnpm dev` (Node 22). Проверки: `pnpm lint && pnpm typecheck && pnpm test && pnpm e2e`.
 
 AutoFlow: [план продукта](docs/AUTOFLOW.md) · [развёртывание](docs/AUTOFLOW_DEPLOY.md). CI-задача `test`, разрешающая автообновление сервера, также требует успешных проверок Python API.
+
+AutoFlow: [закрытое приложение, вход, данные и проверки](docs/AUTOFLOW_APP.md) · [дизайн и аудит](docs/AUTOFLOW_REVIEW.md). `/app` открыт только администрации; новые регистрации остаются в ожидании.

@@ -1,1 +1,1 @@
-window.AUTOFLOW_URL = "https://autoflow.vaylonet.ru";
+window.AUTOFLOW_URL = "https://autoflow.vaylonet.ru/app";

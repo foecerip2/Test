@@ -1,26 +1,58 @@
 import Link from "next/link";
 import { HeroCard } from "@/components/HeroCard";
-import { IconBell, IconCalendar, IconCheck, IconInfo, IconLink, IconMinus, IconPhone, IconPlus } from "@/components/Icons";
+import {
+  IconCalendar,
+  IconCheck,
+  IconLink,
+  IconPlus,
+  IconPhone,
+} from "@/components/Icons";
 import { PilotForm } from "@/components/PilotForm";
+import { Reveal } from "@/components/Reveal";
 import { Footer, Header } from "@/components/SiteChrome";
 
-const d = (n: number) => ({ "--d": n }) as React.CSSProperties;
-
 const STEPS = [
-  { t: "Клиент открывает вашу страницу записи", p: "По ссылке или QR-коду: выбирает услугу и удобное время, оставляет имя и телефон. Регистрироваться не нужно." },
-  { t: "Заявка приходит вам", p: "В кабинет и уведомлением на телефон. Вы подтверждаете запись или предлагаете другое время." },
-  { t: "Расписание не пересекается", p: "Занятое время закрыто для записи, двойных записей на один бокс не будет. Клиент получает подтверждение." },
+  {
+    title: "Одна ссылка для клиентов",
+    text: "Клиент открывает страницу автосервиса, выбирает услугу и время. Без длинной переписки и поиска номера телефона.",
+  },
+  {
+    title: "Каждая заявка на виду",
+    text: "Все записи собраны в расписании. Видно, кто приедет, на какую услугу и какой бокс будет занят.",
+  },
+  {
+    title: "Вы управляете своим днём",
+    text: "Подтверждайте записи, меняйте статусы и оставляйте заметки. У команды всегда одна актуальная картина.",
+  },
 ];
-
 const FAQ = [
-  { q: "Сколько это стоит?", a: <>Цен пока нет: условия пилота обсуждаются индивидуально. Дальше — подписка с оплатой помесячно. Оставьте заявку, и мы расскажем подробнее.</> },
-  { q: "Клиентам нужно регистрироваться?", a: <>Нет. Клиент указывает имя, телефон, услугу и время, а также соглашается на обработку персональных данных.</> },
-  { q: "Как вы обращаетесь с персональными данными?", a: <>Работаем по 152-ФЗ. Черновик политики обработки данных опубликован на странице <Link href="/privacy">Политика</Link>. Данные планируем хранить на серверах в России.</> },
-  { q: "Есть ли приложение?", a: <>Кабинет автосервиса откроется в браузере, а также будет Android-приложение с теми же заявками и расписанием. Версии для iOS пока нет.</> },
-  { q: "Это замена учётной программе?", a: <>Нет. Склад, оплата услуг клиентом, CRM-воронки и интеграции с 1С в первую версию не входят: AutoFlow отвечает за заявки и запись.</> },
-  { q: "Когда запуск?", a: <>Первая версия разрабатывается, пилот пройдёт на ранней версии вместе с первыми автосервисами. Дат не обещаем, пока не уверены в них.</> },
+  {
+    q: "Сколько это стоит?",
+    a: "Условия пилота обсуждаются индивидуально. Дальше — подписка с оплатой помесячно. Оставьте заявку, и мы обсудим ваш автосервис.",
+  },
+  {
+    q: "Можно уже зарегистрироваться?",
+    a: (
+      <>
+        Да, <Link href="/register">создайте аккаунт</Link> и подтвердите почту.
+        Сейчас само приложение открыто только администрации: публичный доступ
+        появится после тестирования.
+      </>
+    ),
+  },
+  {
+    q: "Клиентам нужно регистрироваться?",
+    a: "В публичной записи регистрация для клиентов не планируется: достаточно выбрать услугу, время и оставить контакт. Пока эту часть продукта готовим к пилоту.",
+  },
+  {
+    q: "Есть приложение для телефона?",
+    a: "AutoFlow работает в браузере телефона. Android-приложение использует тот же сайт и будет получать изменения вместе с ним.",
+  },
+  {
+    q: "Это замена учётной программе?",
+    a: "AutoFlow сосредоточен на записи клиентов и расписании. Складской учёт и интеграции с 1С в первую версию не входят.",
+  },
 ];
-
 export default function Home() {
   return (
     <>
@@ -28,190 +60,181 @@ export default function Home() {
         Перейти к содержимому
       </a>
       <Header home />
+      <Reveal />
       <main id="main">
         <section className="hero" aria-labelledby="h1">
           <div className="wrap hero-grid">
-            <div>
-              <span className="eyebrow rise" style={d(0)}>
-                Для автосервисов · набираем пилот
+            <div className="hero-copy rise">
+              <span className="hero-badge">
+                <i /> Для автосервисов · ранний доступ
               </span>
-              <h1 id="h1" className="rise" style={d(1)}>
-                Заявки и запись клиентов — <em>без звонков</em>
+              <h1 id="h1">
+                Заявки и запись клиентов.
+                <br />
+                <em>Всё на своих местах.</em>
               </h1>
-              <p className="lead rise" style={d(2)}>
-                AutoFlow даёт автосервису страницу онлайн-записи, расписание и список заявок в одном месте. Клиент сам выбирает услугу и время, а вы сразу видите заявку.
+              <p className="lead">
+                Понятное расписание, услуги и записи в одном окне. Чтобы
+                заниматься автомобилями, а не искать договорённости в переписке.
               </p>
-              <div className="cta-row rise" style={d(3)}>
+              <div className="cta-row">
                 <a className="btn btn--primary" href="#pilot">
-                  Хочу пилот
+                  Хочу пилот <span aria-hidden="true">↗</span>
                 </a>
-                <a className="btn btn--ghost" href="#how">
-                  Как это работает
+                <a className="hero-secondary" href="#how">
+                  Как это работает <span aria-hidden="true">↓</span>
                 </a>
               </div>
-              <p className="hero-note rise" style={d(4)}>
-                <IconInfo size={20} />
-                Условия пилота обсуждаются лично. Дальше — подписка помесячно.
+              <p className="hero-note">
+                <span className="tiny-check">
+                  <IconCheck size={13} />
+                </span>{" "}
+                Условия пилота обсуждаются лично
               </p>
             </div>
             <HeroCard />
           </div>
+          <div className="wrap hero-bottom">
+            <span>МЕНЬШЕ РУТИНЫ. БОЛЬШЕ ПОРЯДКА.</span>
+            <div>
+              <span>01 / Записи</span>
+              <span>02 / Расписание</span>
+              <span>03 / Услуги</span>
+            </div>
+          </div>
         </section>
-
         <section className="section band" id="how" aria-labelledby="how-h">
-          <div className="wrap">
-            <span className="eyebrow">Как это работает</span>
-            <h2 className="h2" id="how-h">
-              Три шага от клика до записи в расписании
-            </h2>
+          <div className="wrap" data-reveal>
+            <div className="section-head">
+              <span className="eyebrow">ПРОСТОЙ РАБОЧИЙ ПРОЦЕСС</span>
+              <h2 className="h2" id="how-h">
+                Три шага от клика до записи в расписании
+              </h2>
+            </div>
             <ol className="steps">
               {STEPS.map((s, i) => (
-                <li className="step" key={s.t}>
-                  <span className="step-n" aria-hidden="true">
-                    0{i + 1}
-                  </span>
-                  <h3>{s.t}</h3>
-                  <p>{s.p}</p>
+                <li className="step" key={s.title}>
+                  <span className="step-n">0{i + 1}</span>
+                  <h3>{s.title}</h3>
+                  <p>{s.text}</p>
                 </li>
               ))}
             </ol>
           </div>
         </section>
-
         <section className="section" id="features" aria-labelledby="feat-h">
-          <div className="wrap">
-            <span className="eyebrow">Первая версия</span>
-            <h2 className="h2" id="feat-h">
-              Что войдёт в AutoFlow сначала
+          <div className="wrap" data-reveal>
+            <div className="section-head">
+              <span className="eyebrow">ПРОДУКТ БЕЗ ЛИШНЕГО</span>
+              <h2 className="h2" id="feat-h">
+                Что войдёт в AutoFlow сначала
+              </h2>
+              <p>Начинаем с самого важного для вашего рабочего дня.</p>
+            </div>
+            <div className="feature-grid">
+              <article className="feature-main">
+                <div className="feature-top">
+                  <IconCalendar size={24} />
+                  <span>01 / РАСПИСАНИЕ</span>
+                </div>
+                <h3>
+                  У каждого бокса —<br />
+                  своё место в дне.
+                </h3>
+                <p>
+                  Продолжительность услуги и рабочие часы определяют время
+                  записи. Пересечения проверяются на сервере.
+                </p>
+                <div className="feature-timeline" aria-hidden="true">
+                  <span>09:00</span>
+                  <i />
+                  <b>Диагностика</b>
+                  <i />
+                  <span>12:00</span>
+                </div>
+              </article>
+              <article className="feature-side">
+                <IconLink size={25} />
+                <h3>Клиентам — простая запись.</h3>
+                <p>
+                  Персональная ссылка для автосервиса. Публичную запись откроем
+                  после закрытого тестирования.
+                </p>
+                <div className="mini-link">
+                  autoflow / ваш автосервис <span>↗</span>
+                </div>
+              </article>
+              <article className="feature-side">
+                <IconPhone size={25} />
+                <h3>Кабинет всегда под рукой.</h3>
+                <p>
+                  Один продукт на компьютере и телефоне. Сейчас — закрытый
+                  доступ для администрации.
+                </p>
+                <Link href="/login" className="text-link">
+                  Войти в кабинет <span>→</span>
+                </Link>
+              </article>
+            </div>
+          </div>
+        </section>
+        <section className="product-band">
+          <div className="wrap" data-reveal>
+            <span className="eyebrow">СОЗДАЁМ ВМЕСТЕ С АВТОСЕРВИСАМИ</span>
+            <h2>
+              Хороший сервис
+              <br />
+              начинается с порядка.
             </h2>
-            <p className="lead" style={{ marginTop: 16 }}>
-              Минимум, чтобы принимать записи и не терять заявки. Остальное добавим вместе с первыми автосервисами.
+            <p>
+              СТО, шиномонтаж, детейлинг, автоэлектрика — если вы записываете
+              клиентов на время, давайте обсудим пилот.
             </p>
-            <div className="bento">
-              <article className="feat">
-                <div className="feat-ico">
-                  <IconLink />
-                </div>
-                <h3>Публичная страница записи</h3>
-                <p>У каждого автосервиса своя ссылка и QR-код. Клиент выбирает услугу и свободное время, оставляет имя и телефон и даёт согласие на обработку данных.</p>
-                <ul aria-label="Что указывает клиент">
-                  <li>Услуга</li>
-                  <li>Время</li>
-                  <li>Имя и телефон</li>
-                </ul>
-              </article>
-              <article className="feat">
-                <div className="feat-ico">
-                  <IconBell />
-                </div>
-                <h3>Уведомления</h3>
-                <p>Вам — о новой заявке на e-mail и push в приложении. Клиенту — подтверждение и напоминание на e-mail.</p>
-              </article>
-              <article className="feat">
-                <div className="feat-ico">
-                  <IconPhone />
-                </div>
-                <h3>Кабинет и Android-приложение</h3>
-                <p>Заявки и расписание в браузере и на телефоне. Вход по коду из письма, пароль не нужен.</p>
-              </article>
-              <article className="feat">
-                <div className="feat-ico">
-                  <IconCalendar />
-                </div>
-                <h3>Расписание и заявки</h3>
-                <p>Статусы заявок, боксы или мастера, рабочие часы и исключения. Защита от двойной записи на одно время.</p>
-                <ul aria-label="Статусы заявок">
-                  <li>Новая</li>
-                  <li>Подтверждена</li>
-                  <li>Выполнена</li>
-                  <li>Отменена</li>
-                </ul>
-              </article>
-            </div>
+            <a href="#pilot" className="btn btn--light">
+              Обсудить пилот <span>↗</span>
+            </a>
           </div>
         </section>
-
-        <section className="section dark-band dark" id="who" aria-labelledby="who-h">
-          <div className="wrap">
-            <span className="eyebrow">Для кого</span>
-            <h2 className="h2" id="who-h">
-              Для автосервисов, которые записывают клиентов на время
-            </h2>
-            <div className="who">
-              <div>
-                <h3>Подойдёт</h3>
-                <ul className="tags">
-                  <li>Станции техобслуживания</li>
-                  <li>Шиномонтаж</li>
-                  <li>Кузовной ремонт</li>
-                  <li>Автоэлектрика</li>
-                  <li>Детейлинг и мойка</li>
-                </ul>
-                <p className="lead not-in">Особенно если заявки сейчас приходят звонками и в мессенджерах и теряются между ними.</p>
-              </div>
-              <div>
-                <h3>Что получите</h3>
-                <ul className="checks">
-                  <li>
-                    <IconCheck size={22} />
-                    Все заявки в одном списке со статусами
-                  </li>
-                  <li>
-                    <IconCheck size={22} />
-                    Запись по ссылке или QR-коду, без звонков
-                  </li>
-                  <li>
-                    <IconCheck size={22} />
-                    Занятое время закрыто от повторной записи
-                  </li>
-                </ul>
-                <h3 style={{ marginTop: 32 }}>Пока не входит</h3>
-                <ul className="checks checks--no">
-                  <li>
-                    <IconMinus size={22} />
-                    Онлайн-оплата услуг, складской учёт, CRM-воронки
-                  </li>
-                  <li>
-                    <IconMinus size={22} />
-                    Интеграции с 1С и внешними каталогами
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <section className="section pilot" id="pilot" aria-labelledby="pilot-h">
           <div className="wrap pilot-grid">
-            <div>
-              <span className="eyebrow">Пилот</span>
+            <div data-reveal>
+              <span className="eyebrow">ПЕРВЫЕ АВТОСЕРВИСЫ</span>
               <h2 className="h2" id="pilot-h">
-                Хочу пилот
+                Проверим AutoFlow
+                <br />в вашем рабочем дне.
               </h2>
-              <p className="lead" style={{ marginTop: 16 }}>
-                Расскажите об автосервисе и оставьте контакт: мы свяжемся и обсудим, как подключить запись именно у вас.
+              <p className="lead">
+                Расскажите немного об автосервисе. Свяжемся, обсудим задачи и
+                условия участия.
               </p>
-              <div className="price-box">
-                <b>Условия пилота обсуждаются</b>
-                <p>Цены заранее не называем: сначала разбираемся, что нужно вашему автосервису.</p>
+              <div className="pilot-details">
+                <IconCheck size={18} />
+                <p>
+                  <b>Условия пилота обсуждаются</b>
+                  <span>
+                    Дальше — подписка помесячно. Цены и сроки заранее не
+                    придумываем.
+                  </span>
+                </p>
               </div>
             </div>
             <PilotForm />
           </div>
         </section>
-
         <section className="section band" id="faq" aria-labelledby="faq-h">
-          <div className="wrap">
-            <span className="eyebrow">Вопросы и ответы</span>
-            <h2 className="h2" id="faq-h">
-              Частые вопросы
-            </h2>
+          <div className="wrap faq-grid" data-reveal>
+            <div>
+              <span className="eyebrow">ЕЩЁ ПАРА ДЕТАЛЕЙ</span>
+              <h2 className="h2" id="faq-h">
+                Частые вопросы
+              </h2>
+            </div>
             <div className="faq">
               {FAQ.map((f) => (
                 <details key={f.q}>
                   <summary>
                     {f.q}
-                    <IconPlus size={22} />
+                    <IconPlus size={19} />
                   </summary>
                   <div className="ans">{f.a}</div>
                 </details>
