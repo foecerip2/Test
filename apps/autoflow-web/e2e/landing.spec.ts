@@ -14,7 +14,7 @@ async function fill(page: Page, over: Partial<Record<"business" | "city" | "name
 test.describe("лендинг AutoFlow", () => {
   test("главная: смысл на первом экране, разделы, цены не выдуманы", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Заявки и запись клиентов");
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Запись клиентов");
     await expect(page.getByRole("link", { name: "Хочу пилот" }).first()).toBeVisible();
     for (const name of ["Три шага от клика до записи в расписании", "Что войдёт в AutoFlow сначала", "Частые вопросы"]) {
       await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();

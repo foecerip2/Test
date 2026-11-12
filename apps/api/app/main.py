@@ -65,11 +65,14 @@ def origin_allowed(request: Request, settings: Settings) -> bool:
     if auth_application(request) == "autoflow":
         origin = request.headers.get("origin")
         referer = request.headers.get("referer")
+        allowed = settings.autoflow_origin_set
+        if settings.autoflow_domain:
+            allowed = allowed | {f"https://app.{settings.autoflow_domain}"}
         if origin is not None:
-            return origin.strip().rstrip("/").lower() in settings.autoflow_origin_set
+            return origin.strip().rstrip("/").lower() in allowed
         if referer:
             parsed = urlsplit(referer)
-            return f"{parsed.scheme}://{parsed.netloc}".lower() in settings.autoflow_origin_set
+            return f"{parsed.scheme}://{parsed.netloc}".lower() in allowed
         return True
     origin = request.headers.get("origin")
     if origin is not None:

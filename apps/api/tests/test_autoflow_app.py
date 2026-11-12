@@ -110,6 +110,20 @@ def test_origin_is_allowed_only_for_autoflow_routes(ctx: Ctx) -> None:
     )  # origin разрешён, нет настройки
 
 
+def test_app_subdomain_allows_autoflow_auth_only(make_ctx: Any) -> None:
+    ctx = make_ctx(autoflow_domain="autoflow.example.com")
+    headers = {"Origin": "https://app.autoflow.example.com"}
+    response = ctx.client.post(BASE + "/auth/otp/request", json={"email": OWNER}, headers=headers)
+    assert response.status_code == 202
+    response = ctx.client.post("/api/v1/auth/otp/request", json={"email": OWNER}, headers=headers)
+    assert response.status_code == 403
+    response = ctx.client.post(
+        BASE + "/auth/otp/request", json={"email": OWNER},
+        headers={"Origin": "https://evil.autoflow.example.com"},
+    )
+    assert response.status_code == 403
+
+
 def test_registration_saves_profile_but_never_grants_access(ctx: Ctx) -> None:
     login(ctx, "new@example.com")
     r = ctx.client.put(

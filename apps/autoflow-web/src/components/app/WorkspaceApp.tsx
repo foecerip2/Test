@@ -1,4 +1,5 @@
 "use client";
+import { siteConfig } from "@/lib/config";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -149,7 +150,7 @@ export function WorkspaceApp({ section = "schedule" }: { section?: Section }) {
   if (account.access !== "admin")
     return (
       <main className="app-gate">
-        <Link className="logo" href="/">
+        <Link className="logo" href={siteConfig.url}>
           <LogoMark />
           AutoFlow
         </Link>
@@ -176,7 +177,7 @@ export function WorkspaceApp({ section = "schedule" }: { section?: Section }) {
             Выйти
           </button>
         </div>
-        <Link href="/">Вернуться на сайт</Link>
+        <Link href={siteConfig.url}>Вернуться на сайт</Link>
       </main>
     );
   const w = data?.workspace;
@@ -249,7 +250,7 @@ export function WorkspaceApp({ section = "schedule" }: { section?: Section }) {
             <strong>{NAV.find((n) => n.section === section)?.label}</strong>
           </span>
           <div className="workspace-top-actions">
-            <Link href="/">На сайт ↗</Link>
+            <Link href={siteConfig.url}>На сайт ↗</Link>
             <button
               className="mobile-logout"
               disabled={signingOut}

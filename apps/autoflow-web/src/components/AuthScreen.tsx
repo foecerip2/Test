@@ -1,4 +1,5 @@
 "use client";
+import { siteConfig } from "@/lib/config";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -98,7 +99,11 @@ export function AuthScreen({ register = false }: { register?: boolean }) {
   }
   return (
     <main className="auth-page">
-      <Link className="logo" href="/" aria-label="AutoFlow — на главную">
+      <Link
+        className="logo"
+        href={siteConfig.url}
+        aria-label="AutoFlow — на главную"
+      >
         <LogoMark />
         AutoFlow
       </Link>
@@ -270,7 +275,7 @@ export function AuthScreen({ register = false }: { register?: boolean }) {
               {register ? "Войти" : "Зарегистрироваться"}
             </Link>
           </p>
-          <Link className="auth-back" href="/">
+          <Link className="auth-back" href={siteConfig.url}>
             ← Вернуться на сайт
           </Link>
         </section>

@@ -22,3 +22,30 @@
 		reverse_proxy autoflow-web:3000
 	}
 }
+
+# Отдельный адрес приложения. До настройки DNS существующий адрес продолжает работать.
+app.{$AUTOFLOW_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	@root path /
+	redir @root /app 302
+	handle /api/v1/autoflow/* {
+		reverse_proxy api:8000
+	}
+	@application path /app /app/* /login /register /privacy /_next/* /icon.svg /favicon.ico
+	handle @application {
+		reverse_proxy autoflow-web:3000
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

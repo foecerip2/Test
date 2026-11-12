@@ -253,7 +253,7 @@ test("лендинг помещается на экране, показывае�
     ),
   ).toBe(true);
   await expect(
-    page.getByRole("link", { name: "Войти", exact: true }),
+    page.getByRole("link", { name: "Хочу пилот", exact: true }).first(),
   ).toBeVisible();
   await expect(
     page.getByRole("img", { name: /Расписание AutoFlow/ }),

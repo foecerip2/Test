@@ -17,9 +17,6 @@ export function Header({ home = false }: { home?: boolean }) {
           <a href={`${p}#faq`}>Вопросы</a>
         </nav>
         <div className="header-actions">
-          <Link className="header-login" href="/login">
-            Войти
-          </Link>
           <a className="btn btn--primary btn--sm" href={`${p}#pilot`}>
             Хочу пилот
           </a>
@@ -71,9 +68,6 @@ export function Footer() {
           <div>
             <h2>Документы</h2>
             <ul>
-              <li>
-                <Link href="/login">Личный кабинет</Link>
-              </li>
               <li>
                 <Link href="/privacy">
                   Политика обработки персональных данных
