@@ -15,10 +15,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import Settings
 from app.db import make_engine, make_session_factory
+from app.deps import auth_application
 from app.mail import Mailer, make_mailer
 from app.routers import (
     admin,
     auth,
+    autoflow,
     campaigns,
     companies,
     dashboard,
@@ -60,6 +62,15 @@ def error_response(
 
 def origin_allowed(request: Request, settings: Settings) -> bool:
     expected = settings.public_origin_normalized
+    if auth_application(request) == "autoflow":
+        origin = request.headers.get("origin")
+        referer = request.headers.get("referer")
+        if origin is not None:
+            return origin.strip().rstrip("/").lower() in settings.autoflow_origin_set
+        if referer:
+            parsed = urlsplit(referer)
+            return f"{parsed.scheme}://{parsed.netloc}".lower() in settings.autoflow_origin_set
+        return True
     origin = request.headers.get("origin")
     if origin is not None:
         return origin.strip().rstrip("/").lower() == expected
@@ -186,7 +197,8 @@ def create_app(settings: Settings | None = None, mailer: Mailer | None = None) -
         return error_response(request, 500, "INTERNAL_ERROR", "Внутренняя ошибка сервера.")
 
     app.include_router(health.router)
-    app.include_router(auth.router)
+    app.include_router(auth.router, prefix="/api/v1/auth")
+    app.include_router(auth.router, prefix="/api/v1/autoflow/auth")
     app.include_router(admin.router)
     app.include_router(companies.router)
     app.include_router(imports.router)
@@ -195,6 +207,7 @@ def create_app(settings: Settings | None = None, mailer: Mailer | None = None) -
     app.include_router(campaigns.router)
     app.include_router(sources.router)
     app.include_router(pilot.router)
+    app.include_router(autoflow.router)
     return app
 
 

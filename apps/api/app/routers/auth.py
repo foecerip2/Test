@@ -16,10 +16,10 @@ from app import security
 from app.config import Settings
 from app.db import get_db
 from app.deps import (
-    CSRF_COOKIE,
-    SESSION_COOKIE,
     AuthContext,
+    auth_application,
     client_ip,
+    cookie_names,
     get_auth,
     get_mailer,
     get_settings,
@@ -41,7 +41,7 @@ from app.security import AppError
 
 log = logging.getLogger("leadhunter.auth")
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
 
 MAX_ATTEMPTS = 5
 MAX_SENDS = 5
@@ -142,7 +142,12 @@ def otp_request(
 
     user = db.scalar(select(User).where(User.email == email))
     if user is None:
-        user = User(email=email, role="user", status="pending")
+        user = User(
+            email=email,
+            role="user",
+            status="pending",
+            leadhunter_member=auth_application(request) == "leadhunter",
+        )
         db.add(user)
         try:
             db.commit()
@@ -157,6 +162,7 @@ def otp_request(
     db.add(
         OtpChallenge(
             id=challenge_id,
+            application=auth_application(request),
             user_id=user.id,
             email=email,
             code_hmac=security.code_hmac(settings, challenge_id, code),
@@ -202,7 +208,12 @@ def otp_resend(
     mailer: Mailer = Depends(get_mailer),
 ) -> ResendOut:
     ch = db.scalar(
-        select(OtpChallenge).where(OtpChallenge.id == body.challenge_id).with_for_update()
+        select(OtpChallenge)
+        .where(
+            OtpChallenge.id == body.challenge_id,
+            OtpChallenge.application == auth_application(request),
+        )
+        .with_for_update()
     )
     gone = AppError(410, "CODE_EXPIRED", "Код недействителен. Запросите новый код.")
     n = security.now()
@@ -241,11 +252,14 @@ def otp_resend(
     return ResendOut(resend_in=settings.otp_resend_seconds)
 
 
-def _set_cookies(response: Response, settings: Settings, token: str) -> None:
+def _set_cookies(
+    response: Response, settings: Settings, token: str, application: str = "leadhunter"
+) -> None:
+    session_cookie, csrf_cookie = cookie_names(application)
     max_age = settings.session_ttl_days * 86400
     secure = settings.cookie_secure_effective
     response.set_cookie(
-        SESSION_COOKIE,
+        session_cookie,
         token,
         max_age=max_age,
         httponly=True,
@@ -254,7 +268,7 @@ def _set_cookies(response: Response, settings: Settings, token: str) -> None:
         path="/",
     )
     response.set_cookie(
-        CSRF_COOKIE,
+        csrf_cookie,
         security.csrf_for_session(settings, token),
         max_age=max_age,
         httponly=False,
@@ -273,7 +287,12 @@ def otp_verify(
     settings: Settings = Depends(get_settings),
 ) -> VerifyOut:
     ch = db.scalar(
-        select(OtpChallenge).where(OtpChallenge.id == body.challenge_id).with_for_update()
+        select(OtpChallenge)
+        .where(
+            OtpChallenge.id == body.challenge_id,
+            OtpChallenge.application == auth_application(request),
+        )
+        .with_for_update()
     )
     n = security.now()
     if ch is None:
@@ -317,7 +336,15 @@ def otp_verify(
         raise AppError(410, "CODE_USED", "Код уже использован. Запросите новый код.")
 
     is_new = user.last_login_at is None
-    if is_new and settings.owner_email and user.email == settings.owner_email:
+    joining_leadhunter = auth_application(request) == "leadhunter" and not user.leadhunter_member
+    if joining_leadhunter:
+        user.leadhunter_member = True
+        user.role, user.status = "user", "pending"
+    if (
+        (is_new or joining_leadhunter)
+        and settings.owner_email
+        and user.email == settings.owner_email
+    ):
         user.role = "owner"
         user.status = "active"
     user.last_login_at = n
@@ -325,6 +352,7 @@ def otp_verify(
     token = security.new_session_token()
     db.add(
         SessionRow(
+            application=auth_application(request),
             user_id=user.id,
             token_hash=security.session_token_hash(settings, token),
             expires_at=n + timedelta(days=settings.session_ttl_days),
@@ -341,7 +369,7 @@ def otp_verify(
         meta={"is_new": is_new},
     )
     db.commit()
-    _set_cookies(response, settings, token)
+    _set_cookies(response, settings, token, auth_application(request))
     return VerifyOut(user=UserOut.model_validate(user), is_new=is_new)
 
 
@@ -353,9 +381,10 @@ def me(
     settings: Settings = Depends(get_settings),
 ) -> MeOut:
     expected = security.csrf_for_session(settings, auth.token)
-    if request.cookies.get(CSRF_COOKIE) != expected:
+    csrf_cookie = cookie_names(auth_application(request))[1]
+    if request.cookies.get(csrf_cookie) != expected:
         response.set_cookie(
-            CSRF_COOKIE,
+            csrf_cookie,
             expected,
             max_age=settings.session_ttl_days * 86400,
             httponly=False,
@@ -368,6 +397,7 @@ def me(
 
 @router.post("/logout", status_code=204)
 def logout(
+    request: Request,
     db: Session = Depends(get_db),
     auth: AuthContext = Depends(require_csrf),
     settings: Settings = Depends(get_settings),
@@ -379,6 +409,7 @@ def logout(
     db.commit()
     resp = Response(status_code=204)
     secure = settings.cookie_secure_effective
-    resp.delete_cookie(SESSION_COOKIE, path="/", secure=secure, httponly=True, samesite="lax")
-    resp.delete_cookie(CSRF_COOKIE, path="/", secure=secure, samesite="lax")
+    session_cookie, csrf_cookie = cookie_names(auth_application(request))
+    resp.delete_cookie(session_cookie, path="/", secure=secure, httponly=True, samesite="lax")
+    resp.delete_cookie(csrf_cookie, path="/", secure=secure, samesite="lax")
     return resp

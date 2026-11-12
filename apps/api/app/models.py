@@ -43,6 +43,9 @@ def _now() -> datetime:
 
 class User(Base):
     __tablename__ = "users"
+    leadhunter_member: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=True, server_default=sa.true()
+    )
     __table_args__ = (sa.CheckConstraint("email = lower(email)", name="ck_users_email_lower"),)
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
@@ -57,6 +60,10 @@ class User(Base):
 
 class OtpChallenge(Base):
     __tablename__ = "otp_challenges"
+
+    application: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, default="leadhunter", server_default="leadhunter"
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -74,6 +81,10 @@ class OtpChallenge(Base):
 
 class SessionRow(Base):
     __tablename__ = "sessions"
+
+    application: Mapped[str] = mapped_column(
+        sa.String(16), nullable=False, default="leadhunter", server_default="leadhunter"
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(

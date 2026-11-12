@@ -2,7 +2,9 @@
   "name": "leadhunter",
   "private": true,
   "packageManager": "pnpm@10.28.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
@@ -10,5 +12,10 @@
     "typecheck": "pnpm --filter web typecheck",
     "test": "pnpm --filter web test",
     "e2e": "pnpm --filter web e2e"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.23"
+    }
   }
 }

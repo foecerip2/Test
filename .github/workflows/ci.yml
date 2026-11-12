@@ -19,9 +19,7 @@ concurrency:
 # версии по тегам ниже — официальные релизы, SHA не проверялись из среды разработки.
 jobs:
   # Имя job `test` используется сервером: коммит из main разворачивается, только если для него `test` завершился успешно.
-  test:
-    # lh-update ждёт job test: его успех также требует успешных проверок API.
-    needs: api
+  web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -39,6 +37,12 @@ jobs:
       - name: Playwright (Chromium)
         run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm e2e
+      - name: Python для сквозных проверок приложения AutoFlow
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Зависимости реального API для браузерных тестов
+        run: pip install -e "./apps/api[dev]"
       # AutoFlow (лендинг): тот же job, чтобы не платить за второй checkout/install/Playwright; браузер уже установлен выше
       - name: AutoFlow — lint, typecheck, vitest
         run: pnpm --filter autoflow-web lint && pnpm --filter autoflow-web typecheck && pnpm --filter autoflow-web test
@@ -61,8 +65,29 @@ jobs:
             apps/autoflow-web/test-results
           retention-days: 5
 
+  test:
+    # Стабильное имя для lh-update: только после успешных web И api.
+    needs: [web, api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "Web and API checks passed"
+
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres # только одноразовая тестовая БД GitHub Actions
+          POSTGRES_DB: autoflow_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@localhost:5432/autoflow_test
     timeout-minutes: 15
     defaults:
       run:

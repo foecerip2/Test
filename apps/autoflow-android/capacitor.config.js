@@ -9,13 +9,13 @@ module.exports = {
   appName: "AutoFlow",
   webDir: "www",
   server: {
-    url,
+    url: `${url}/app`,
     cleartext: false,
     allowNavigation: [u.hostname],
     errorPath: "error.html",
   },
   android: {
     allowMixedContent: false,
-    backgroundColor: "#fbf7f0",
+    backgroundColor: "#f5f7fb",
   },
 };
