@@ -1,6 +1,6 @@
-// Конфигурация оболочки AutoFlow. Адрес сайта берётся из AUTOFLOW_URL (по умолчанию https://autoflow.vaylonet.ru);
+// Конфигурация оболочки AutoFlow. Адрес сайта берётся из AUTOFLOW_URL (по умолчанию https://app.autoflow.vaylonet.ru);
 // навигация внутри приложения разрешена только на домен этого адреса.
-const url = (process.env.AUTOFLOW_URL || "https://autoflow.vaylonet.ru").replace(/\/+$/, "");
+const url = (process.env.AUTOFLOW_URL || "https://app.autoflow.vaylonet.ru").replace(/\/+$/, "");
 const u = new URL(url);
 if (u.protocol !== "https:") throw new Error("AUTOFLOW_URL должен начинаться с https://");
 

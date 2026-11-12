@@ -13,7 +13,7 @@ concurrency:
   group: autoflow-android-${{ github.ref }}
   cancel-in-progress: true
 
-# Приложение — оболочка вокруг https://autoflow.vaylonet.ru (адрес можно сменить переменной репозитория AUTOFLOW_URL):
+# Приложение — оболочка вокруг https://app.autoflow.vaylonet.ru:
 # весь интерфейс и логика обновляются вместе с сайтом. APK прикладывается к GitHub Release с тегом autoflow-android-N.
 # Ключ подписи создаётся на лету: каждая сборка подписана новым ключом, поэтому поверх установленной версии
 # APK обновить нельзя — сначала удалите старое приложение. Workflow независим от android.yml (LeadHunter).
@@ -37,7 +37,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Синхронизация Capacitor
         env:
-          AUTOFLOW_URL: ${{ vars.AUTOFLOW_URL }}
+          AUTOFLOW_URL: https://app.autoflow.vaylonet.ru
         run: pnpm --filter autoflow-android sync
       - name: Ключ подписи (временный) и сборка
         working-directory: apps/autoflow-android/android

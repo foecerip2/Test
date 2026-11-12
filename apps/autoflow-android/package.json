@@ -2,7 +2,7 @@
   "name": "autoflow-android",
   "version": "0.1.0",
   "private": true,
-  "description": "Android-оболочка AutoFlow: открывает https://autoflow.vaylonet.ru (весь интерфейс и логика — на сайте)",
+  "description": "Android-оболочка AutoFlow: открывает https://app.autoflow.vaylonet.ru (весь интерфейс и логика — на сайте)",
   "scripts": {
     "sync": "node scripts/sync.mjs"
   },
