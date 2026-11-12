@@ -256,11 +256,10 @@ test("лендинг помещается на экране, показывае�
     page.getByRole("link", { name: "Войти", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Пример интерфейса", { exact: true }),
+    page.getByRole("img", { name: /Расписание AutoFlow/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Подтвердить", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText(
-    "Пример: запись подтверждена",
+  await expect(page.locator(".product-preview figcaption")).toContainText(
+    "данные для примера",
   );
   const duration = await page
     .locator(".hero-copy")

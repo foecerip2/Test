@@ -66,16 +66,16 @@ export default function Home() {
           <div className="wrap hero-grid">
             <div className="hero-copy rise">
               <span className="hero-badge">
-                <i /> Для автосервисов · ранний доступ
+                <i /> Программа записи для автосервиса
               </span>
               <h1 id="h1">
-                Заявки и запись клиентов.
+                Запись клиентов
                 <br />
-                <em>Всё на своих местах.</em>
+                <em>без путаницы.</em>
               </h1>
               <p className="lead">
-                Понятное расписание, услуги и записи в одном окне. Чтобы
-                заниматься автомобилями, а не искать договорённости в переписке.
+                Расписание, услуги и записи в одном рабочем окне. Видно, кто
+                приедет, когда и какой бокс будет занят.
               </p>
               <div className="cta-row">
                 <a className="btn btn--primary" href="#pilot">
@@ -93,14 +93,6 @@ export default function Home() {
               </p>
             </div>
             <HeroCard />
-          </div>
-          <div className="wrap hero-bottom">
-            <span>МЕНЬШЕ РУТИНЫ. БОЛЬШЕ ПОРЯДКА.</span>
-            <div>
-              <span>01 / Записи</span>
-              <span>02 / Расписание</span>
-              <span>03 / Услуги</span>
-            </div>
           </div>
         </section>
         <section className="section band" id="how" aria-labelledby="how-h">

@@ -2649,3 +2649,98 @@ fieldset {
     font-size: 9px;
   }
 }
+
+/* Спокойная редакционная подача: продукт вместо декоративного макета. */
+.hero {
+  background: #f2f1eb;
+}
+.hero-grid {
+  grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
+  gap: 44px;
+  padding-block: 88px;
+}
+.hero-badge {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #52564f;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.hero-badge i {
+  width: 24px;
+  height: 1px;
+  border-radius: 0;
+  background: currentColor;
+}
+.hero h1 {
+  max-width: 650px;
+  font-size: clamp(45px, 5vw, 76px);
+  font-weight: 650;
+  letter-spacing: -0.065em;
+  line-height: 1.02;
+  margin: 30px 0 28px;
+}
+.hero h1 em {
+  color: #465c49;
+}
+.hero .lead {
+  color: #495149;
+  font-size: 18px;
+  max-width: 440px;
+  line-height: 1.5;
+}
+.product-preview {
+  width: 100%;
+  margin: 0;
+  transform: none;
+  border-radius: 4px;
+  border: 1px solid #d2d4ca;
+  box-shadow: 18px 18px 0 #dcdfd5;
+  background: #fff;
+}
+.preview-image-wrap {
+  overflow: hidden;
+}
+.preview-image-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.preview-live {
+  background: #fff;
+  text-align: left;
+  padding: 12px 17px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  border-radius: 0;
+}
+@media (max-width: 850px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 42px;
+    padding-block: 56px;
+  }
+  .hero h1 {
+    max-width: 680px;
+  }
+}
+@media (max-width: 600px) {
+  .hero-grid {
+    padding-top: 42px;
+    padding-bottom: 56px;
+    gap: 36px;
+  }
+  .hero h1 {
+    font-size: clamp(42px, 11vw, 60px);
+  }
+  .product-preview {
+    box-shadow: 8px 8px 0 #dcdfd5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-preview {
+    transform: none;
+  }
+}
