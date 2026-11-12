@@ -22,7 +22,7 @@
 Известная связь: если сборка `autoflow` не удалась, весь коммит помечается неудачным и не выкатывается (в том числе для LeadHunter). Если AutoFlow мешает, выключите его: `lh-config autoflow off`.
 
 ## 3. Приём заявок на пилот (API)
-Форма отправляет `POST /api/v1/autoflow/pilot-requests` с JSON `{business_name, city, contact_name, phone|null, email|null, consent:true, website:""}`. Пока серверной части нет, ответ 404/501 и форма показывает «заявки временно не принимаются» с e-mail для связи. Серверная часть — отдельный шаг (apps/api). Учтите, что проверка Origin/CSRF в API должна разрешать `https://autoflow.vaylonet.ru`.
+Форма отправляет `POST /api/v1/autoflow/pilot-requests` с JSON `{business_name, city, contact_name, phone|null, email|null, consent:true, website:""}`. Серверная часть реализована в `apps/api`, миграция `0004`. Успех возвращает HTTP 202; в случае недоступности API форма показывает ошибку и контакт для связи. `AUTOFLOW_DOMAIN` передаётся из compose в API и разрешает Origin лендинга. Владелец обрабатывает заявки через `/autoflow/pilots` в кабинете LeadHunter (GET/PATCH API, сессия владельца и CSRF для изменения). После выката проверьте форму, запись в кабинете, смену статуса и сохранение заметки. Письма о новых заявках пока не отправляются.
 
 ## 4. Перенос на отдельный сервер
 Когда нагрузка или риск оправдают отдельный VPS:

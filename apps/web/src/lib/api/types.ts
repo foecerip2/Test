@@ -169,7 +169,16 @@ export interface Settings {
   retentionDays: number;
 }
 
+export type PilotStatus = "new" | "contacted" | "accepted" | "declined" | "spam";
+export interface PilotRequest {
+  id: string; businessName: string; city: string; contactName: string; phone: string | null; email: string | null;
+  status: PilotStatus; note: string; consentAt: string; consentTextVersion: string; createdAt: string; updatedAt: string;
+}
+export interface PilotPage { items: PilotRequest[]; nextCursor: string | null }
+export interface PilotFilter { status?: PilotStatus; cursor?: string; limit?: number }
+
 export interface Summary {
+  pilotRequestsNew?: number;
   companiesTotal: number;
   companiesWeek: number;
   suitable: number;
@@ -232,6 +241,10 @@ export interface Api {
     listUsers(): Promise<AdminUser[]>;
     approveUser(id: string): Promise<AdminUser>;
     blockUser(id: string): Promise<AdminUser>;
+  };
+  pilotRequests: {
+    list(filter: PilotFilter): Promise<PilotPage>;
+    update(id: string, patch: { status?: PilotStatus; note?: string }): Promise<PilotRequest>;
   };
   summary(): Promise<Summary>;
   companies: {

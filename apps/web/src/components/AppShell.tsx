@@ -24,6 +24,7 @@ const NAV_SYS = [
 ] as const;
 
 export const PAGE_TITLES: Record<string, string> = {
+  "/autoflow/pilots": "Заявки AutoFlow",
   "/overview": "Обзор", "/discovery": "Поиск компаний", "/companies": "База компаний", "/approvals": "Согласование",
   "/inbox": "Диалоги", "/pipeline": "Воронка продаж", "/analytics": "Аналитика", "/settings": "Настройки",
 };
@@ -107,7 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const initials = userInitials(user);
 
   const s = summary.data;
-  const counts: Record<string, number | undefined> = { companies: s?.companiesTotal, approvals: s?.awaitingApproval, inbox: s?.unread };
+  const counts: Record<string, number | undefined> = { pilots: user.role === "owner" ? s?.pilotRequestsNew : undefined, companies: s?.companiesTotal, approvals: s?.awaitingApproval, inbox: s?.unread };
   const title = Object.entries(PAGE_TITLES).find(([k]) => path === k || path.startsWith(k + "/"))?.[1] ?? "";
   const isDetail = path.startsWith("/companies/");
   const mock = process.env.NEXT_PUBLIC_DATA_MODE !== "live";
@@ -142,7 +143,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="nav-label" id="nav-main">Рабочее пространство</div>
         <nav className="nav" aria-labelledby="nav-main">{NAV_MAIN.map(link)}</nav>
         <div className="nav-label second" id="nav-sys">Система</div>
-        <nav className="nav" aria-labelledby="nav-sys">{NAV_SYS.map(link)}</nav>
+        <nav className="nav" aria-labelledby="nav-sys">{NAV_SYS.map(link)}{user.role === "owner" && live && link({ href: "/autoflow/pilots", label: "Заявки AutoFlow", icon: "bell", count: "pilots" })}</nav>
         <div className="sidebar-spacer" />
         <div className="mode-card">
           <h2>Режим работы</h2>

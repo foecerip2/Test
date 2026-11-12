@@ -157,6 +157,7 @@ export function toSummary(raw: unknown): Summary {
   const byStage: Partial<Record<CrmStage, number>> = {};
   for (const s of STAGES) if (typeof st[s] === "number") byStage[s] = st[s] as number;
   return {
+    pilotRequestsNew: typeof r.pilot_requests_new === "number" ? r.pilot_requests_new : undefined,
     companiesTotal: num(r.companies_total), companiesWeek: num(r.companies_week), suitable: num(r.suitable),
     scoreThreshold: typeof r.score_threshold === "number" ? r.score_threshold : undefined,
     byStage, attention: [], recent: arr(r.recent).map(toActivity), topCompanies: arr(r.top_companies).map(toCompany),

@@ -25,9 +25,16 @@ export default function OverviewPage() {
   if (q.error && !q.data) return <>{header}<ErrorState level={2} error={q.error} onRetry={q.reload} /></>;
   const s = q.data!;
 
+  const pilotNotice = me.data?.role === "owner" && s.pilotRequestsNew !== undefined && s.pilotRequestsNew > 0 ? (
+    <div className="callout" style={{ marginTop: 0, marginBottom: 22 }}>
+      <div><h2>Новые заявки AutoFlow: {s.pilotRequestsNew}</h2><p>Автосервисы оставили контакты для участия в пилоте.</p></div>
+      <Link href="/autoflow/pilots" className="btn">Открыть заявки <Icon name="arrow" /></Link>
+    </div>
+  ) : null;
+
   if (s.companiesTotal === 0) {
     return (
-      <>{header}
+      <>{header}{pilotNotice}
         <Panel>
           <EmptyState level={2} icon="building"
             title={live ? "Загрузите свой CSV" : "В базе пока нет компаний"}
@@ -43,6 +50,7 @@ export default function OverviewPage() {
   return (
     <>
       {header}
+      {pilotNotice}
       {pendingUsers ? (
         <div className="callout" style={{ marginTop: 0, marginBottom: 22 }} data-testid="pending-users">
           <div>

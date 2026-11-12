@@ -201,6 +201,10 @@ export function createMockApi(opts: MockOptions = {}): Api {
     mode: "demo",
     subscribe(cb) { listeners.add(cb); return () => { listeners.delete(cb); }; },
 
+    pilotRequests: {
+      async list() { throw new ApiError(501, "NOT_AVAILABLE", "Заявки на пилот доступны только в рабочем режиме."); },
+      async update() { throw new ApiError(501, "NOT_AVAILABLE", "Заявки на пилот доступны только в рабочем режиме."); },
+    },
     authMode: "demo",
     auth,
     admin: createMockAdmin({ auth, latency: opts.authLatency, lastOwner: opts.lastOwner, fail: opts.fail, notify: emit }),
