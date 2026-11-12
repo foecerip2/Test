@@ -290,3 +290,21 @@ def test_pilot_inbox_uses_autoflow_session_and_admin_permissions(ctx: Ctx) -> No
     assert (
         ctx.client.patch(url, json={"status": "accepted"}, headers=headers(ctx)).status_code == 403
     )
+
+
+def test_moscow_timezone_available_without_os_zoneinfo() -> None:
+    # Slim Docker может не содержать /usr/share/zoneinfo: нужен пакет tzdata.
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from zoneinfo import ZoneInfo,reset_tzpath; from datetime import datetime; reset_tzpath([]); print(datetime(2026,11,12,tzinfo=ZoneInfo('Europe/Moscow')).utcoffset())",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "3:00:00"
