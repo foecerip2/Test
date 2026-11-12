@@ -118,7 +118,8 @@ def test_app_subdomain_allows_autoflow_auth_only(make_ctx: Any) -> None:
     response = ctx.client.post("/api/v1/auth/otp/request", json={"email": OWNER}, headers=headers)
     assert response.status_code == 403
     response = ctx.client.post(
-        BASE + "/auth/otp/request", json={"email": OWNER},
+        BASE + "/auth/otp/request",
+        json={"email": OWNER},
         headers={"Origin": "https://evil.autoflow.example.com"},
     )
     assert response.status_code == 403
